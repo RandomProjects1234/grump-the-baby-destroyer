@@ -139,7 +139,7 @@ js/
 
 ## Notes for anyone poking at it
 
-- **Everything is procedural** except five recorded voice lines. Textures are
+- **Everything is procedural** except seven recorded voice lines. Textures are
   painted into canvases, models are boxes, all other audio is synthesised.
 - **The school is a pure function of the seed.** `generateSchool(seed)` returns
   the same building on every machine, which is the whole basis of multiplayer.
