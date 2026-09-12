@@ -2,6 +2,8 @@
 
 It is the last day of school. Everyone got picked up. Except you.
 
+**Play it: <https://randomprojects1234.github.io/grump-the-baby-destroyer/>**
+
 A 3D survival-horror game about a baby left behind in an empty school, a
 generator that will not feed itself, a janitor who wants you back in your
 classroom, and a small boy in green dungarees who would like to ask you some
@@ -45,11 +47,15 @@ Repeat, five nights by default, with both threats getting worse.
 
 ### Night
 
+**The nights belong to Bob.** He is the one who will actually hurt you for the
+first three of them.
+
 - **Light is safety.** Bob will not touch you in a lit room. Grump will not
-  enter one — until he is angry enough that he will.
-- **Bob** patrols, hums, sweeps a torch, and from night 2 switches lights off
-  behind him. Hide in a locker and hold still.
-- **Grump** watches from a distance, and gets bigger every night.
+  enter one — until he has turned, and then he will.
+- **Bob** patrols every night, hums, sweeps a torch, and from night 2 switches
+  lights off behind him. He gets faster every night. Hide in a locker and hold
+  still.
+- **Grump** only watches for the first three nights. He gets bigger each one.
 - **Noise carries.** Sprinting is loud, crawling is silent, and a baby at
   maximum fear starts crying — the loudest thing in the building.
 
@@ -59,7 +65,10 @@ Every question he asks has no correct answer. Each option costs him a little
 more patience, and walking away costs the most of all. Cleaning up his school is
 the only thing that ever takes the edge off.
 
-At 100 resentment he stops asking questions.
+**On day 4 he stops asking questions**, and from then on he hunts you in
+daylight as well as in the dark. Being rude enough to max his resentment brings
+that forward; being polite does not push it back. The dialogue decides how bad
+he is when he turns, not whether he turns.
 
 ## Controls
 
@@ -151,6 +160,9 @@ js/
 - **`window.__GRUMP`** is the live game object — handy for poking at state:
   `__GRUMP.generator.fuel = 100`, `__GRUMP.grump.anger(50, __GRUMP)`,
   `__GRUMP.phaseTime = 1`.
+- **The day-4 turn lives in `Grump.checkSchedule()`** (`threats.js`), called at
+  each dawn. `GRUMP_TURNS_ON_DAY` is the constant. Everything downstream asks
+  `grump.turned`, never `resent >= 100`.
 - **A watchdog drives the loop** if `requestAnimationFrame` stalls, which it
   does in some embedded viewers and in background tabs. Without it the night
   clock can silently freeze.
