@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Grump the Baby Destroyer</title>
+<meta name="description" content="It is the last day of school. Everyone got picked up except you. Survive the nights, keep the lights on, and do not answer Grump's questions.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' fill='%231b2418'/><rect x='3' y='5' width='3' height='3' fill='%23ff2a1a'/><rect x='10' y='5' width='3' height='3' fill='%23ff2a1a'/><rect x='4' y='11' width='8' height='2' fill='%236a2a2a'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+</script>
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<!-- ============================================================ in-game HUD -->
+<div id="hud" class="hidden">
+  <div id="vignette"></div>
+  <div id="flash"></div>
+  <div id="crosshair"></div>
+
+  <div id="topbar">
+    <div id="clock"><span id="phase">DAY 1</span><span id="timeleft">4:00</span></div>
+    <div id="powerpill"><span class="dot"></span><span id="powertext">POWER ON</span></div>
+  </div>
+
+  <div id="objectives"></div>
+
+  <div id="prompt" class="hidden">
+    <div class="pkey">E</div>
+    <div class="ptext"><span id="promptlabel"></span><em id="prompthint"></em></div>
+    <div id="promptbar"><i></i></div>
+    <div id="promptextra" class="hidden"></div>
+  </div>
+
+  <div id="bars">
+    <div class="bar" id="bar-health"><span></span><label>❤</label></div>
+    <div class="bar" id="bar-stam"><span></span><label>⚡</label></div>
+    <div class="bar" id="bar-food"><span></span><label>🍪</label></div>
+    <div class="bar" id="bar-fear"><span></span><label>😰</label></div>
+  </div>
+
+  <div id="hands"></div>
+  <div id="hotbar"></div>
+
+  <div id="subtitle"></div>
+  <div id="bigline"></div>
+  <div id="toasts"></div>
+  <div id="chatlog"></div>
+  <div id="chatbox" class="hidden"><span>&gt;</span><input id="chatinput" maxlength="120" autocomplete="off"></div>
+  <div id="hidebadge" class="hidden">HIDDEN &nbsp;·&nbsp; hold <b>RMB</b> to peek</div>
+</div>
+
+<!-- ============================================================= main menu -->
+<div id="menu" class="screen">
+  <div class="titlewrap">
+    <div class="kicker">it is the last day of school</div>
+    <h1>GRUMP</h1>
+    <h2>the baby destroyer</h2>
+    <div class="sub">Everyone got picked up. Except you.</div>
+  </div>
+  <div class="menubtns">
+    <button class="big" data-go="play">Survive Alone</button>
+    <button data-go="hostscreen">Host Co-op</button>
+    <button data-go="joinscreen">Join Co-op</button>
+    <button data-go="howto">How to Survive</button>
+    <button data-go="settings">Settings</button>
+  </div>
+  <div class="foot">A game about a baby, a generator, and a boy who is not a boy.</div>
+</div>
+
+<!-- ================================================================= host -->
+<div id="hostscreen" class="screen hidden">
+  <h3>Host Co-op</h3>
+  <p class="lead">Up to four babies. You run the school clock, so keep this tab open.</p>
+  <div class="row"><label>Nights to survive</label>
+    <select id="host-nights"><option>3</option><option selected>5</option><option>7</option><option>10</option></select>
+  </div>
+  <div class="row"><label>Difficulty</label>
+    <select id="host-diff">
+      <option value="gentle">Gentle</option>
+      <option value="normal" selected>Normal</option>
+      <option value="nasty">Nasty</option>
+    </select>
+  </div>
+  <div class="row"><label>Your name</label><input id="host-name" maxlength="12" placeholder="Baby"></div>
+  <div id="hostcode" class="codebox hidden">Room code: <b></b><button id="copycode" class="mini">copy</button></div>
+  <div class="err" id="host-err"></div>
+  <div class="btnrow"><button id="host-start" class="big">Open the room</button><button data-go="menu">Back</button></div>
+</div>
+
+<!-- ================================================================= join -->
+<div id="joinscreen" class="screen hidden">
+  <h3>Join Co-op</h3>
+  <p class="lead">Ask the host for their five-letter room code.</p>
+  <div class="row"><label>Room code</label><input id="join-code" maxlength="5" placeholder="ABCDE" autocapitalize="characters"></div>
+  <div class="row"><label>Your name</label><input id="join-name" maxlength="12" placeholder="Baby"></div>
+  <div class="err" id="join-err"></div>
+  <div class="btnrow"><button id="join-go" class="big">Join</button><button data-go="menu">Back</button></div>
+</div>
+
+<!-- ============================================================= settings -->
+<div id="settings" class="screen hidden">
+  <h3>Settings</h3>
+  <div class="row"><label>Mouse sensitivity</label><input type="range" id="set-sens" min="0.2" max="3" step="0.05"><span id="val-sens"></span></div>
+  <div class="row"><label>Field of view</label><input type="range" id="set-fov" min="60" max="105" step="1"><span id="val-fov"></span></div>
+  <div class="row"><label>Volume</label><input type="range" id="set-vol" min="0" max="1" step="0.02"><span id="val-vol"></span></div>
+  <div class="row"><label>Quality</label>
+    <select id="set-quality"><option value="low">Low</option><option value="med" selected>Medium</option><option value="high">High</option></select>
+  </div>
+  <div class="row"><label>Invert look</label><input type="checkbox" id="set-invert"></div>
+  <div class="btnrow"><button data-go="menu" class="big">Done</button></div>
+</div>
+
+<!-- ================================================================ howto -->
+<div id="howto" class="screen hidden">
+  <h3>How to Survive</h3>
+  <div class="howgrid">
+    <div>
+      <h4>Days are for work</h4>
+      <ul>
+        <li><b>Search everything.</b> Lockers, desks, bins, crates. Fuel and parts live in the boiler room and storage.</li>
+        <li><b>Feed the generator.</b> Fuel keeps it burning, parts keep it from stalling. It powers every light in the school.</li>
+        <li><b>Clean up.</b> Every mess still on the floor at nightfall makes the generator drink faster.</li>
+        <li><b>Carry the little ones home.</b> Toddlers left out in the building do not survive the night.</li>
+      </ul>
+    </div>
+    <div>
+      <h4>Nights are for hiding</h4>
+      <ul>
+        <li><b>Light is safety.</b> Bob will not touch you in a lit room. Grump will not enter one — for now.</li>
+        <li><b>Bob patrols.</b> He hums. He sweeps a torch. He switches lights off behind him. Hide in a locker and hold still.</li>
+        <li><b>Grump watches.</b> Every night he is a little bigger. When he stops asking questions, run.</li>
+        <li><b>Noise carries.</b> Sprinting is loud. Crawling is quiet. A crying baby is the loudest thing in the building.</li>
+      </ul>
+    </div>
+    <div>
+      <h4>Grump</h4>
+      <ul>
+        <li>He will ask you things. Answering costs you. <b>So does walking away.</b></li>
+        <li>There is no right answer. Work out how little you can spend.</li>
+        <li>Cleaning up his school is the only thing that ever calms him down.</li>
+      </ul>
+    </div>
+    <div>
+      <h4>Controls</h4>
+      <table class="keys">
+        <tr><td>WASD</td><td>waddle</td></tr>
+        <tr><td>Shift</td><td>run (loud, tiring)</td></tr>
+        <tr><td>Ctrl</td><td>crawl (quiet, slow)</td></tr>
+        <tr><td>E / LMB</td><td>interact — hold for jobs</td></tr>
+        <tr><td>R</td><td>use selected item / second option</td></tr>
+        <tr><td>1–6</td><td>pick from the bag</td></tr>
+        <tr><td>Q</td><td>put down what is in your hands</td></tr>
+        <tr><td>F</td><td>torch</td></tr>
+        <tr><td>RMB</td><td>peek, while hidden</td></tr>
+        <tr><td>Tab</td><td>objectives</td></tr>
+        <tr><td>T</td><td>chat (co-op)</td></tr>
+        <tr><td>Esc</td><td>pause</td></tr>
+      </table>
+    </div>
+  </div>
+  <div class="btnrow"><button data-go="menu" class="big">Back</button></div>
+</div>
+
+<!-- ============================================================== dialogue -->
+<div id="dialogue" class="overlay hidden">
+  <div class="dlgbox">
+    <div class="who">GRUMP</div>
+    <div class="qtext" id="dlg-q"></div>
+    <div class="answers" id="dlg-a"></div>
+    <div class="reply hidden" id="dlg-reply"></div>
+    <div class="meter"><label>how he feels about you</label><div class="mbar"><i id="dlg-meter"></i></div></div>
+  </div>
+</div>
+
+<!-- =============================================================== drawing -->
+<div id="drawing" class="overlay hidden">
+  <div class="paper">
+    <h4 id="draw-title"></h4>
+    <p id="draw-text"></p>
+    <button id="draw-close" class="big">Fold it up</button>
+  </div>
+</div>
+
+<!-- ================================================================== dawn -->
+<div id="dawn" class="overlay hidden">
+  <div class="dawnbox">
+    <div class="dawnkicker" id="dawn-kicker">THE SUN COMES UP</div>
+    <h3 id="dawn-title">You survived the night.</h3>
+    <div id="dawn-lines"></div>
+    <button id="dawn-go" class="big">Get up</button>
+  </div>
+</div>
+
+<!-- ================================================================== over -->
+<div id="over" class="overlay hidden">
+  <div class="overbox">
+    <h2 id="over-title">CAUGHT</h2>
+    <div id="over-sub"></div>
+    <div id="over-stats"></div>
+    <div class="btnrow"><button id="over-again" class="big">Try again</button><button id="over-menu">Main menu</button></div>
+  </div>
+</div>
+
+<!-- ================================================================= pause -->
+<div id="pause" class="overlay hidden">
+  <div class="pausebox">
+    <h3>Paused</h3>
+    <div id="pause-code" class="hidden"></div>
+    <div class="btnrow">
+      <button id="pause-resume" class="big">Resume</button>
+      <button data-go="settings" id="pause-settings">Settings</button>
+      <button id="pause-quit">Quit to menu</button>
+    </div>
+  </div>
+</div>
+
+<!-- =============================================================== loading -->
+<div id="loading" class="overlay hidden">
+  <div class="loadbox">
+    <div class="spinner"></div>
+    <div id="loadtext">Unlocking the school…</div>
+  </div>
+</div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
