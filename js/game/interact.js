@@ -373,14 +373,40 @@ export function useSelected(game) {
   }
 }
 
+// Q: put down whatever is in your hands; with empty hands, drop the item
+// selected in your bag instead.
 export function dropHands(game) {
   const p = game.player;
   if (p.carryingToddler) { game.putDownToddler(); return; }
-  if (!p.hands) { game.sfx.deny(); return; }
-  const f = p.forward();
-  game.spawnGroundItem(p.hands, p.x + f.x * 0.9, p.z + f.z * 0.9);
-  p.hands = null;
+  if (p.hidden) { game.ui.toast('No room to drop anything in here.'); game.sfx.deny(); return; }
+  let kind = p.hands;
+  if (kind) {
+    p.hands = null;
+  } else {
+    kind = p.selectedItem;
+    if (!kind) { game.ui.toast('Nothing to drop. Pick a slot with 1-6 first.'); game.sfx.deny(); return; }
+    p.bag[p.selected] = null;
+    // dropping your only torch switches it off
+    if (kind === 'flashlight' && !p.hasItem('flashlight')) p.torchOn = false;
+  }
+  const [x, z] = dropSpot(game);
+  game.spawnGroundItem(kind, x, z);
   game.sfx.drop();
+  game.ui.toast(`Dropped ${itemName(kind)}.`);
+}
+
+// In front of you if there is floor there, otherwise at your feet -- never
+// inside a wall or a desk where it could not be picked back up.
+function dropSpot(game) {
+  const p = game.player;
+  const f = p.forward();
+  const l = Math.hypot(f.x, f.z) || 1;
+  const fx = f.x / l, fz = f.z / l;
+  for (const d of [0.8, 0.55, 0.3]) {
+    const x = p.x + fx * d, z = p.z + fz * d;
+    if (game.collider.free(x, z, 0.12) && game.collider.lineClear(p.x, p.z, x, z)) return [x, z];
+  }
+  return [p.x, p.z];
 }
 
 export { isBig };

@@ -138,7 +138,7 @@ the power dies he comes and stands very close.
 | `E` / `LMB` | interact; hold for anything that takes effort |
 | `R` | use the selected item, or the second option on a prompt |
 | `1`–`6` | pick from the bag |
-| `Q` | put down whatever is in your hands |
+| `Q` | drop what is in your hands, or the selected bag item |
 | `F` | torch |
 | `RMB` | peek, while hidden |
 | `M` | map of the school |
