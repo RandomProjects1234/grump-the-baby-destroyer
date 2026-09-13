@@ -92,6 +92,7 @@
     <button data-go="hostscreen">Host Co-op</button>
     <button data-go="joinscreen">Join Co-op</button>
     <button data-go="howto">How to Survive</button>
+    <button data-wiki>Wiki</button>
     <button data-go="settings">Settings</button>
   </div>
   <div class="foot">A game about a baby, a generator, and a boy who is not a boy.</div>
@@ -160,6 +161,7 @@
 <!-- ================================================================ howto -->
 <div id="howto" class="screen hidden">
   <h3>How to Survive</h3>
+  <p class="lead">Everything else &mdash; every item, room, quest and night &mdash; is on the <a href="https://randomprojects1234.github.io/grump-the-baby-destroyer-wiki/" target="_blank" rel="noopener">wiki</a>.</p>
   <div class="howgrid">
     <div>
       <h4>Days are for work</h4>
@@ -262,6 +264,7 @@
     <div class="btnrow">
       <button id="pause-resume" class="big">Resume</button>
       <button data-go="settings" id="pause-settings">Settings</button>
+      <button data-wiki>Wiki</button>
       <button id="pause-quit">Quit to menu</button>
     </div>
   </div>
@@ -276,5 +279,9 @@
 </div>
 
 <script type="module" src="js/main.js"></script>
+<script>
+document.querySelectorAll('[data-wiki]').forEach(b => b.addEventListener('click', () =>
+  window.open('https://randomprojects1234.github.io/grump-the-baby-destroyer-wiki/', '_blank', 'noopener')));
+</script>
 </body>
 </html>

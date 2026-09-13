@@ -4,6 +4,8 @@ It is the last day of school. Everyone got picked up. Except you.
 
 **Play it: <https://randomprojects1234.github.io/grump-the-baby-destroyer/>**
 
+**Wiki: <https://randomprojects1234.github.io/grump-the-baby-destroyer-wiki/>**
+
 A 3D survival-horror game about a baby left behind in an empty school, a
 generator that will not feed itself, a janitor who wants you back in your
 classroom, and a small boy in green dungarees who would like to ask you some

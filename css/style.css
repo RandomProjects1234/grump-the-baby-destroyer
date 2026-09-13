@@ -408,3 +408,4 @@ table.keys td:first-child {
 .lg.lock { background: #c4342a; border-radius: 1px; }
 @media (max-width: 640px) { #minimap { width: 110px; height: 110px; } }
 .lg.teacher { background: #e8c060; }
+.lead a { color: #ffd23f; font-weight: bold; }
