@@ -620,7 +620,7 @@ class Game {
     this.messes.spawnForDay(this.night, this.seed);
     this.toddlers.pruneTaken();
     this.toddlers.spawnForDay(this.night, this.seed);
-    for (const p of this.school.props) { p.searched = false; p.checked = false; }
+    for (const p of this.school.props) { p.searched = false; p.checked = false; p.searchCount = 0; }
 
     if (first) {
       this.spawnGroundItem('fuel', this.school.boiler.cx + 1.4, this.school.boiler.cz + 1.0);
@@ -1089,10 +1089,14 @@ class Game {
       this.ui.setPrompt({ label: 'You cannot say anything', hint: 'You are a baby. He does not mind.', key: '—', hold: 0 }, 0);
       return;
     }
+    // Keep the thing you are holding E on as the target until you let go.
+    this.holdKey = this.input.interact && this.holdT > 0 ? this.holdKeyLast : null;
     const inter = findInteraction(this);
     this.lastInteraction = inter;
-    if (!inter) { this.holdT = 0; this.holdLabel = null; this.ui.setPrompt(null); return; }
-    if (inter.label !== this.holdLabel) { this.holdT = 0; this.holdLabel = inter.label; }
+    if (!inter) { this.holdT = 0; this.holdLabel = null; this.holdKeyLast = null; this.ui.setPrompt(null); return; }
+    const id = inter.key || inter.label;
+    if (id !== this.holdLabel) { this.holdT = 0; this.holdLabel = id; }
+    this.holdKeyLast = inter.key || null;
 
     if (this.input.interact) {
       // After an action fires, E has to be let go before the next one starts.
@@ -1134,27 +1138,35 @@ class Game {
 
   // --- searching
   searchProp(prop) {
-    if (prop.searched) return;
-    prop.searched = true;
-    if (!this.isHost) { this.net.send({ t: 'act', k: 'search', id: prop.id }); return; }
+    if (!this.isHost) {
+      prop.searched = true;
+      this.net.send({ t: 'act', k: 'search', id: prop.id });
+      return;
+    }
+    const first = !prop.searchCount;
     const found = this.rollSearch(prop);
-    this.giveFound(found);
-    this.netEvent({ k: 'search', id: prop.id, found, by: 'host' });
+    this.giveFound(found, first);
+    this.netEvent({ k: 'search', id: prop.id, found, by: 'host', c: prop.searchCount });
   }
 
+  // Every search of the same thing on the same day finds less: the first roll
+  // is the normal loot table, then 45%, 20%, 9%... of that.
   rollSearch(prop) {
     prop.searched = true;
-    const rng = makeRng(hashStr(this.seed + ':' + prop.id + ':' + this.night));
-    const found = rollLoot(prop.search, rng, this.night);
+    const n = prop.searchCount || 0;
+    prop.searchCount = n + 1;
+    const rng = makeRng(hashStr(this.seed + ':' + prop.id + ':' + this.night + ':' + n));
+    let found = rollLoot(prop.search, rng, this.night);
+    if (n > 0 && rng() > Math.pow(0.45, n)) found = null;
     this.emitNoise(prop.x, prop.z, prop.search === 'locker' ? 0.45 : 0.3, 'search');
     const room = this.school.rooms[prop.room];
     this.questEvent('search', { room: room ? room.type : null });
     return found;
   }
 
-  giveFound(found) {
+  giveFound(found, first = true) {
     this.player.stats.searched++;
-    this.score += 8;
+    if (first) this.score += 8;
     if (!found) { this.sfx.searchTick(); this.ui.toast('Nothing in there.'); return; }
     if (this.player.give(found)) {
       this.sfx.pickup();
@@ -1779,7 +1791,7 @@ class Game {
         night: this.night, phase: this.phase, phaseTime: this.phaseTime,
         doors: s.doors.map(d => (d.open ? 1 : 0) | (d.locked ? 2 : 0)),
         lights: s.rooms.map(r => r.lightsOn ? 1 : 0),
-        searched: s.props.filter(p => p.searched).map(p => p.id),
+        searched: s.props.filter(p => p.searchCount).map(p => [p.id, p.searchCount]),
         messes: this.messes.serialize(),
         quests: this.quests.list.map(q => q.spec),
         qp: this.quests.serialize(),
@@ -1803,7 +1815,11 @@ class Game {
       if (d.box) d.box.active = !d.open;
     });
     st.lights.forEach((v, i) => { if (s.rooms[i]) s.rooms[i].lightsOn = !!v; });
-    for (const id of st.searched) { const p = this.propById.get(id); if (p) p.searched = true; }
+    for (const e of st.searched) {
+      const [id, c] = Array.isArray(e) ? e : [e, 1];
+      const p = this.propById.get(id);
+      if (p) { p.searched = true; p.searchCount = c; }
+    }
     this.messes.spawnForDay(this.night, this.seed);
     for (const id of st.messes) this.messes.remove(this.messes.list[id]);
     this.quests.load(st.quests, this.night);
@@ -1983,8 +1999,8 @@ class Game {
       case 'fx': if (!this.isHost) this.playFx(m.f, m.x, m.z, m.e || {}); return;
       case 'search': {
         const p = this.propById.get(m.id);
-        if (p) p.searched = true;
-        if (!this.isHost && m.by === this.net.myId) this.giveFound(m.found);
+        if (p) { p.searched = true; if (m.c) p.searchCount = m.c; }
+        if (!this.isHost && m.by === this.net.myId) this.giveFound(m.found, m.c === 1);
         break;
       }
       case 'mess': this.messes.remove(this.messes.list[m.id]); break;
@@ -2012,7 +2028,7 @@ class Game {
         if (m.phase === 'day') {
           this.applyMods([]);
           this.messes.spawnForDay(m.night, this.seed);
-          for (const p of this.school.props) { p.searched = false; p.checked = false; }
+          for (const p of this.school.props) { p.searched = false; p.checked = false; p.searchCount = 0; }
           if (m.quests) this.quests.load(m.quests, m.night);
           if (m.eo) { this.escapeOpen = true; for (const d of this.school.exitDoors) d.locked = false; }
           if (m.dawn) this.ui.showDawn(m.dawn.title, m.dawn.kicker, m.dawn.lines);
@@ -2052,12 +2068,9 @@ class Game {
       case 'search': {
         const p = this.propById.get(m.id);
         if (!p) return;
-        if (p.searched) {
-          this.net.sendTo(from, { t: 'ev', k: 'search', id: p.id, found: null, by: from });
-          return;
-        }
+        // Two babies can rummage in the same cupboard; it just runs out faster.
         const found = this.rollSearch(p);
-        this.net.broadcast({ t: 'ev', k: 'search', id: p.id, found, by: from });
+        this.net.broadcast({ t: 'ev', k: 'search', id: p.id, found, by: from, c: p.searchCount });
         break;
       }
       case 'take': {

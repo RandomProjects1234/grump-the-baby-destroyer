@@ -18,6 +18,21 @@ function score(game, x, z) {
   return (1 - d / REACH) * 0.6 + (1 - diff / CONE) * 0.4;
 }
 
+// Small things (a toddler, an item, a mess): if they sit on your line of sight
+// they count as looked-at, with a little extra so they beat the furniture
+// behind them.
+function smallScore(game, x, z, radius = 0.35) {
+  const p = game.player;
+  const base = score(game, x, z);
+  const fx = -Math.sin(p.yaw), fz = -Math.cos(p.yaw);
+  const dx = x - p.x, dz = z - p.z;
+  const along = dx * fx + dz * fz;
+  if (along <= 0 || along > REACH) return base;
+  const off = Math.abs(dx * fz - dz * fx);
+  if (off > radius) return base;
+  return Math.max(base, (1 - along / REACH) * 0.6 + 0.4 + 0.06);
+}
+
 // Returns { label, hint, hold, act } or null.
 export function findInteraction(game) {
   const p = game.player;
@@ -42,9 +57,13 @@ export function findInteraction(game) {
 
   let best = null, bestScore = 0;
   let bestHide = null, bestHideScore = 0;
-  const consider = (x, z, make, weight = 1) => {
-    const s = score(game, x, z) * weight;
-    if (s > bestScore) { const o = make(); if (o) { bestScore = s; best = o; } }
+  // Whatever you are already holding E on stays the target, so a toddler or
+  // Grump wandering through your view does not restart the search bar.
+  const holding = game.holdKey;
+  const consider = (x, z, make, weight = 1, key = null, raw = null) => {
+    let s = (raw === null ? score(game, x, z) : raw) * weight;
+    if (key && key === holding && s > 0) s += 10;
+    if (s > bestScore) { const o = make(); if (o) { if (key) o.key = key; bestScore = s; best = o; } }
   };
 
   // --- quest deliveries that work anywhere in the right room
@@ -63,7 +82,7 @@ export function findInteraction(game) {
       hint: ITEMS[it.kind] && ITEMS[it.kind].desc,
       hold: 0,
       act: () => game.pickUpGroundItem(it)
-    }));
+    }), 1, null, smallScore(game, it.x, it.z, 0.3));
   }
 
   // --- toddlers
@@ -76,7 +95,7 @@ export function findInteraction(game) {
       if (t.hunger > 40 && food) return { label: `Feed ${t.name} your ${itemName(food).toLowerCase()}`, hint: 'Hungry toddlers cry, and crying carries.', hold: 0.7, act: () => game.feedToddler(t, food) };
       if (p.handsFree) return { label: `Pick up ${t.name}`, hint: t.hunger > 65 ? 'Hungry.' : 'Carry them to your classroom.', hold: 0.45, act: () => game.carryToddler(t) };
       return { label: `${t.name} (hands full)`, hold: 0, act: () => game.sfx.deny() };
-    }, t.state === 'safe' ? 0.55 : 0.85);
+    }, t.state === 'safe' ? 0.55 : 1, null, smallScore(game, t.x, t.z, 0.35));
   }
 
   // --- put a carried toddler down
@@ -98,7 +117,7 @@ export function findInteraction(game) {
       hint: 'Mess left at nightfall burns extra fuel.',
       hold: mess.time,
       act: () => game.cleanMess(mess)
-    }));
+    }), 1, 'mess' + mess.id, smallScore(game, mess.x, mess.z, 0.5));
   }
 
   // --- the generator
@@ -172,14 +191,13 @@ export function findInteraction(game) {
   // --- searchable furniture and hiding places
   for (const prop of game.school.props) {
     if (!prop.search && !prop.hide && !prop.crib) continue;
-    const fx = Math.sin(prop.rot), fz = Math.cos(prop.rot);
-    const ax = prop.x + fx * (prop.hd + 0.15), az = prop.z + fz * (prop.hd + 0.15);
-    if (dist2(p.x, p.z, ax, az) > REACH) continue;
+    if (dist2(p.x, p.z, prop.x, prop.z) > REACH + Math.max(prop.hw, prop.hd) + 0.2) continue;
+    const aim = aimAtProp(game, prop);
+    if (!aim) continue;
     if (prop.hide) {
-      const hs = score(game, ax, az);
-      if (hs > bestHideScore) { bestHideScore = hs; bestHide = prop; }
+      if (aim.score > bestHideScore) { bestHideScore = aim.score; bestHide = prop; }
     }
-    consider(ax, az, () => {
+    consider(aim.x, aim.z, () => {
       if (prop.crib) {
         if (p.hands === 'hamster') {
           return { label: 'Put Mr. Wiggles back', hint: 'He is very pleased to be home.', hold: 0.8, act: () => game.questDeliver('hamster') };
@@ -189,10 +207,16 @@ export function findInteraction(game) {
       if (prop.search === 'lost' && p.hasItem('holocard')) {
         return { label: 'Leave the shiny card in Lost & Found', hint: 'Somebody might come back for it.', hold: 0.8, act: () => game.questDeliver('holocard') };
       }
-      if (prop.search && !prop.searched) {
+      if (prop.search) {
+        // Always searchable. The first rummage is the good one; after that
+        // there is less and less left, but there is always a chance.
+        const n = prop.searchCount || 0;
+        const hint = n === 0 ? (prop.hide ? 'You could also hide in here.' : '')
+          : n === 1 ? 'Already searched once -- might be something left at the back.'
+            : 'Searched a lot today. Probably picked clean.';
         return {
-          label: `Search the ${labelOf(prop)}`,
-          hint: prop.hide ? 'You could also hide in here.' : '',
+          label: n ? `Search the ${labelOf(prop)} again` : `Search the ${labelOf(prop)}`,
+          hint,
           hold: SEARCH_TIME[prop.search] || 1.4,
           extra: prop.hide ? { label: 'Hide', key: 'R', hold: 0.7, act: () => game.hideIn(prop) } : null,
           act: () => game.searchProp(prop)
@@ -207,8 +231,8 @@ export function findInteraction(game) {
           act: () => game.hideIn(prop)
         };
       }
-      return { label: `${labelOf(prop)} (empty)`, hold: 0, act: () => game.sfx.deny() };
-    });
+      return null;
+    }, 1, 'prop' + prop.id, aim.score);
   }
 
   // --- Mrs. Honeywell
@@ -269,6 +293,38 @@ const LABELS = {
   tube: 'concrete tube', bleacher: 'bleachers', vault: 'vaulting box', toybox: 'toy box'
 };
 function labelOf(p) { return LABELS[p.type] || p.type; }
+
+// How squarely are you looking at a piece of furniture? Walks along your line
+// of sight and checks it against the whole box (any side, any size), so a big
+// sandpit or a lunch table works from wherever you stand. Falls back to the
+// nearest edge for a looser score. Returns { x, z, score } or null.
+function aimAtProp(game, prop) {
+  const p = game.player;
+  const c = Math.cos(prop.rot), s = Math.sin(prop.rot);
+  const pad = 0.18;
+  const local = (x, z) => {
+    const dx = x - prop.x, dz = z - prop.z;
+    return [dx * c - dz * s, dx * s + dz * c];     // [across, along]
+  };
+  const fx = -Math.sin(p.yaw), fz = -Math.cos(p.yaw);
+  for (let t = 0.15; t <= REACH; t += 0.1) {
+    const x = p.x + fx * t, z = p.z + fz * t;
+    const [u, v] = local(x, z);
+    if (Math.abs(u) <= prop.hw + pad && Math.abs(v) <= prop.hd + pad) {
+      if (!game.collider.lineClear(p.x, p.z, x - fx * 0.12, z - fz * 0.12)) return null;
+      // Same scale as score() with perfect aim, so a toddler or a mess that is
+      // closer than the furniture still wins.
+      return { x, z, score: (1 - t / REACH) * 0.6 + 0.4 };
+    }
+  }
+  // Not looking straight at it: nearest point on its edge, normal scoring.
+  const [u, v] = local(p.x, p.z);
+  const cu = Math.max(-prop.hw - pad, Math.min(prop.hw + pad, u));
+  const cv = Math.max(-prop.hd - pad, Math.min(prop.hd + pad, v));
+  const x = prop.x + cu * c + cv * s, z = prop.z - cu * s + cv * c;
+  const sc = score(game, x, z);
+  return sc > 0 ? { x, z, score: sc } : null;
+}
 
 // ---------------------------------------------------------------- using items
 
