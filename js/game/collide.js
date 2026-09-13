@@ -240,7 +240,8 @@ export function repairConnectivity(school) {
 
     for (const i of bridges) {
       blocked[i] = 0;
-      for (const p of (propAt.get(i) || [])) doomed.add(p);
+      // The generator and the crib are load-bearing; never prune those.
+      for (const p of (propAt.get(i) || [])) if (!p.generator && !p.crib && !p.fusebox) doomed.add(p);
     }
   }
 

@@ -92,8 +92,11 @@ export class Generator {
 
   update(dt, game) {
     if (!this.running) return;
-    this.fuel = clamp(this.fuel - this.burnRate(game) * dt, 0, 100);
-    this.condition = clamp(this.condition - dt * 0.35 * (game.mods.storm ? 2 : 1), 0, 100);
+    // Lights matter less in daylight, so the machine idles lower.
+    const idle = game.phase === 'day' ? 0.6 : 1;
+    this.fuel = clamp(this.fuel - this.burnRate(game) * idle * dt, 0, 100);
+    // About one spare part a day keeps it healthy.
+    this.condition = clamp(this.condition - dt * 0.07 * (game.mods.storm ? 2 : 1), 0, 100);
 
     if (this.fuel <= 0) {
       game.fx('big', 0, 0, { text: 'THE LIGHTS GO OUT' });
@@ -101,8 +104,8 @@ export class Generator {
       return;
     }
     // A neglected machine stalls on its own.
-    if (this.condition < 42) {
-      this.sputterT -= dt * (1 + (42 - this.condition) / 30);
+    if (this.condition < 30) {
+      this.sputterT -= dt * (1 + (30 - this.condition) / 20);
       if (this.sputterT <= 0) {
         this.sputterT = 22 + Math.random() * 26;
         game.fx('big', 0, 0, { text: 'THE GENERATOR STALLS' });
@@ -148,13 +151,18 @@ export class Messes {
     this.clear();
     const rng = makeRng((seed ^ (night * 3313)) >>> 0);
     const s = this.game.school;
-    const rooms = s.rooms.filter(r => !r.outdoor);
+    const rooms = s.rooms.filter(r => !r.outdoor && r.type !== 'staff');
     const count = clamp(3 + night, 3, 10);
     for (let i = 0; i < count; i++) {
       const r = rooms[Math.floor(rng() * rooms.length)];
       const def = MESS_KINDS[Math.floor(rng() * MESS_KINDS.length)];
-      const x = r.cx + (rng() - 0.5) * (r.w - 1) * s.CELL;
-      const z = r.cz + (rng() - 0.5) * (r.h - 1) * s.CELL;
+      let x = r.cx + (rng() - 0.5) * (r.w - 1) * s.CELL;
+      let z = r.cz + (rng() - 0.5) * (r.h - 1) * s.CELL;
+      // Nudge it out of furniture so it can actually be reached.
+      for (let k = 0; k < 8 && !this.game.collider.free(x, z, 0.5); k++) {
+        x = r.cx + (rng() - 0.5) * (r.w - 1) * s.CELL;
+        z = r.cz + (rng() - 0.5) * (r.h - 1) * s.CELL;
+      }
       this.add(x, z, def, rng);
     }
   }

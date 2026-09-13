@@ -84,12 +84,12 @@ const TEMPLATES = {
   },
   drawing: {
     title: () => 'Read the walls',
-    desc: () => 'Find a crayon drawing and look at it.',
-    event: 'drawing', goal: () => 1, tier: 'basic'
+    desc: s => `Somebody left a crayon drawing in ${ROOM_LABEL[s.p] || 'the school'}. Find it and read it (R).`,
+    event: 'drawing', goal: () => 1, tier: 'basic', spawn: 'drawing'
   },
   hamster: {
     title: () => 'Find Mr. Wiggles',
-    desc: s => `The class hamster escaped into ${ROOM_LABEL[s.p] || 'the school'}. Put him back in the crib.`,
+    desc: s => `The class hamster escaped into ${ROOM_LABEL[s.p] || 'the school'}. Carry him back to your classroom.`,
     event: 'deliver', match: (s, d) => d.item === 'hamster', goal: () => 1, tier: 'great',
     spawn: 'hamster'
   },
@@ -111,7 +111,8 @@ const TEMPLATES = {
 const PLACES = {
   searchRoom: ['library', 'art', 'music', 'cafeteria', 'kitchen', 'nurse', 'lostfound', 'storage'],
   lights: ['library', 'art', 'music', 'gym', 'cafeteria', 'kitchen', 'nurse'],
-  visit: ['yard', 'gym', 'library', 'music', 'bathroom', 'staff'],
+  visit: ['yard', 'gym', 'library', 'music', 'bathroom', 'kitchen'],
+  drawing: ['library', 'art', 'music', 'cafeteria', 'gym'],
   hamster: ['gym', 'library', 'art', 'music', 'cafeteria', 'nurse', 'yard'],
   crayon: ['art', 'library', 'cafeteria', 'gym', 'bathroom'],
   holocard: ['gym', 'yard', 'cafeteria', 'music', 'library']
@@ -152,10 +153,23 @@ export class Quests {
     }
     const spec = picks.map(t => {
       const tpl = TEMPLATES[t];
-      const places = PLACES[t];
-      return { t, p: places ? rng.pick(places) : null, g: tpl.goal(night) };
-    });
+      let places = PLACES[t];
+      if (t === 'searchRoom') {
+        // Only rooms with enough to search, so the job is always finishable.
+        places = places.filter(type => this.searchableIn(type) >= 3);
+      }
+      const place = places && places.length ? rng.pick(places) : null;
+      let goal = tpl.goal(night);
+      if (t === 'feed' || t === 'rescue') goal = Math.min(goal, 2);
+      return { t, p: place, g: goal };
+    }).filter(sp => !PLACES[sp.t] || sp.p);
     return spec;
+  }
+
+  searchableIn(type) {
+    const room = this.game.school.rooms.find(r => r.type === type);
+    if (!room) return 0;
+    return this.game.school.props.filter(p => p.search && p.room === room.id).length;
   }
 
   // Everyone: build the live list from a spec.
@@ -176,6 +190,10 @@ export class Quests {
   spawnItems() {
     const g = this.game;
     const s = g.school;
+    // Yesterday's leftovers go, so the map only shows today's jobs.
+    for (const it of g.groundItems.list.slice()) {
+      if (it.kind === 'hamster' || it.kind === 'crayon' || it.kind === 'holocard') g.groundItems.remove(it);
+    }
     for (const q of this.list) {
       if (!q.tpl.spawn) continue;
       const room = s.rooms.find(r => r.type === q.spec.p) || s.gym;

@@ -41,10 +41,20 @@ export function findInteraction(game) {
   }
 
   let best = null, bestScore = 0;
-  const consider = (x, z, make) => {
-    const s = score(game, x, z);
+  let bestHide = null, bestHideScore = 0;
+  const consider = (x, z, make, weight = 1) => {
+    const s = score(game, x, z) * weight;
     if (s > bestScore) { const o = make(); if (o) { bestScore = s; best = o; } }
   };
+
+  // --- quest deliveries that work anywhere in the right room
+  const here = game.school.roomAt(p.x, p.z);
+  if (p.hands === 'hamster' && here === game.school.home) {
+    return { label: 'Put Mr. Wiggles back in his classroom', hint: 'He is very pleased to be home.', hold: 0.8, act: () => game.questDeliver('hamster') };
+  }
+  if (p.hasItem('holocard') && here && here.type === 'lostfound') {
+    return { label: 'Leave the shiny card in Lost & Found', hint: 'Somebody might come back for it.', hold: 0.8, act: () => game.questDeliver('holocard') };
+  }
 
   // --- dropped items
   for (const it of game.groundItems.list) {
@@ -59,13 +69,14 @@ export function findInteraction(game) {
   // --- toddlers
   for (const t of game.toddlers.list) {
     if (t.state === 'carried' || t.state === 'taken') continue;
+    if (t.putDownAt && game.time - t.putDownAt < 1.5) continue;
     consider(t.x, t.z, () => {
       if (p.hands === 'teddy') return { label: `Give the teddy to ${t.name}`, hold: 0.8, act: () => game.teddyToddler(t) };
       const food = p.bag.find(k => isFood(k));
       if (t.hunger > 40 && food) return { label: `Feed ${t.name} your ${itemName(food).toLowerCase()}`, hint: 'Hungry toddlers cry, and crying carries.', hold: 0.7, act: () => game.feedToddler(t, food) };
       if (p.handsFree) return { label: `Pick up ${t.name}`, hint: t.hunger > 65 ? 'Hungry.' : 'Carry them to your classroom.', hold: 0.45, act: () => game.carryToddler(t) };
       return { label: `${t.name} (hands full)`, hold: 0, act: () => game.sfx.deny() };
-    });
+    }, t.state === 'safe' ? 0.55 : 0.85);
   }
 
   // --- put a carried toddler down
@@ -94,13 +105,29 @@ export function findInteraction(game) {
   const gen = game.generator;
   if (gen && dist2(p.x, p.z, gen.x, gen.z) < 2.6) {
     consider(gen.x, gen.z, () => {
-      if (p.hands === 'fuel') return { label: 'Pour in the fuel', hold: 2.2, act: () => { p.hands = null; game.genAction('refuel'); } };
-      if (p.hasItem('part')) {
-        const fast = p.hasItem('wrench');
-        return { label: fast ? 'Repair (wrench)' : 'Repair', hint: `Condition ${Math.round(gen.condition)}%`, hold: fast ? 1.3 : 2.6, act: () => { p.take('part'); game.genAction('repair'); } };
+      const status = `Fuel ${Math.round(gen.fuel)}% · Condition ${Math.round(gen.condition)}%`;
+      const opts = [];
+      if (p.hands === 'fuel') {
+        if (gen.fuel >= 97) opts.push({ label: 'The tank is already full', hint: status, hold: 0, act: () => game.sfx.deny() });
+        else opts.push({ label: 'Pour in the fuel', hint: status, hold: 2.2, act: () => { p.hands = null; game.genAction('refuel'); } });
       }
-      if (!gen.running) return { label: 'Pull the starter cord', hint: `Fuel ${Math.round(gen.fuel)}% · Condition ${Math.round(gen.condition)}%`, hold: 1.1, act: () => game.genAction('start') };
-      return { label: 'The generator is running', hint: `Fuel ${Math.round(gen.fuel)}% · ${game.fuelTimeLeft()}`, hold: 0, act: () => game.sfx.click() };
+      if (!gen.running) {
+        opts.push({
+          label: 'Pull the starter cord',
+          hint: gen.fuel <= 1 ? 'It needs fuel first.' : gen.condition <= 12 ? 'Too broken to start. Fit a spare part.' : status,
+          hold: 1.1, act: () => game.genAction('start')
+        });
+      }
+      if (p.hasItem('part') && gen.condition < 97) {
+        const fast = p.hasItem('wrench');
+        opts.push({ label: fast ? 'Repair it (wrench)' : 'Repair it', hint: status, hold: fast ? 1.3 : 2.6, act: () => { p.take('part'); game.genAction('repair'); } });
+      }
+      if (!opts.length) {
+        return { label: 'The generator is running', hint: `${status} · ${game.fuelTimeLeft()}`, hold: 0, act: () => game.sfx.click() };
+      }
+      const main = opts[0];
+      if (opts[1]) main.extra = Object.assign({ key: 'R' }, opts[1]);
+      return main;
     });
   }
 
@@ -124,8 +151,11 @@ export function findInteraction(game) {
   for (const sw of game.switches) {
     consider(sw.x, sw.z, () => {
       const on = sw.room.lightsOn !== false;
-      if (!game.generator.running) return { label: 'The switch clicks. Nothing.', hint: 'No power.', hold: 0, act: () => { game.sfx.click(); game.sfx.deny(); } };
-      return { label: on ? `Lights off · ${sw.room.name}` : `Lights on · ${sw.room.name}`, hold: 0, act: () => game.setRoomLights(sw.room, !on, 'player') };
+      return {
+        label: on ? `Lights off · ${sw.room.name}` : `Lights on · ${sw.room.name}`,
+        hint: game.generator.running ? '' : 'No power right now -- they will come on when the generator does.',
+        hold: 0, act: () => game.setRoomLights(sw.room, !on, 'player')
+      };
     });
   }
 
@@ -145,6 +175,10 @@ export function findInteraction(game) {
     const fx = Math.sin(prop.rot), fz = Math.cos(prop.rot);
     const ax = prop.x + fx * (prop.hd + 0.15), az = prop.z + fz * (prop.hd + 0.15);
     if (dist2(p.x, p.z, ax, az) > REACH) continue;
+    if (prop.hide) {
+      const hs = score(game, ax, az);
+      if (hs > bestHideScore) { bestHideScore = hs; bestHide = prop; }
+    }
     consider(ax, az, () => {
       if (prop.crib) {
         if (p.hands === 'hamster') {
@@ -168,12 +202,24 @@ export function findInteraction(game) {
         return {
           label: `Hide ${prop.hide === 'under' ? 'under' : 'in'} the ${labelOf(prop)}`,
           hint: prop.searched ? 'Already searched.' : '',
+          isHide: true,
           hold: 0.7,
           act: () => game.hideIn(prop)
         };
       }
       return { label: `${labelOf(prop)} (empty)`, hold: 0, act: () => game.sfx.deny() };
     });
+  }
+
+  // --- Mrs. Honeywell
+  const hw = game.honeywell;
+  if (hw && hw.visible && dist2(p.x, p.z, hw.x, hw.z) < REACH + 0.6) {
+    consider(hw.x, hw.z, () => ({
+      label: 'Talk to Mrs. Honeywell',
+      hint: 'She will go over the list with you.',
+      hold: 0,
+      act: () => hw.talk()
+    }));
   }
 
   // --- grump
@@ -193,7 +239,9 @@ export function findInteraction(game) {
         hold: 0.35,
         act: () => game.tryTalkToGrump()
       };
-    });
+    // Holding his crayon, he is what you came for -- do not let a generator or
+    // a door standing next to him steal the prompt.
+    }, p.hasItem('crayon') ? 1.8 : 1);
   }
 
   // --- reviving a downed friend
@@ -206,6 +254,10 @@ export function findInteraction(game) {
     }));
   }
 
+  if (best && bestHide && !best.extra && !best.isHide) {
+    const prop = bestHide;
+    best.extra = { label: `Hide ${prop.hide === 'under' ? 'under' : 'in'} the ${labelOf(prop)}`, key: 'R', hold: 0, act: () => game.hideIn(prop) };
+  }
   return best;
 }
 

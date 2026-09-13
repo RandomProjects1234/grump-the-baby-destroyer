@@ -24,12 +24,14 @@ import { Toddlers } from './game/toddlers.js';
 import { Generator, Messes, GroundItems, PortableLights } from './game/systems.js';
 import { findInteraction, useSelected, dropHands } from './game/interact.js';
 import { CardKid } from './game/cardkid.js';
+import { Honeywell } from './game/honeywell.js';
 import { Quests } from './game/quests.js';
 import { rollLoot, DRAWINGS, ITEMS, itemName, isBig, lunchboxContents } from './game/items.js';
 import { pickQuestion } from './game/dialogue.js';
 import { makeBaby, makeGrump, setGrumpStage, animateWalk, BABY_COLORS, OUTFIT_COLORS } from './render/models.js';
 import { Sfx } from './audio/sfx.js';
 import { UI } from './ui/ui.js';
+import { MapView } from './ui/map.js';
 import { Net } from './net/net.js';
 import { clamp, lerp, dist2, makeRng, hashStr, fmtTime } from './util/util.js';
 
@@ -139,6 +141,7 @@ class Game {
     this.sfx = new Sfx();
     this.sfx.setVolume(this.settings.vol);
     this.ui = new UI(this);
+    this.map = new MapView(this);
     this.net = new Net(this);
 
     this.school = null;
@@ -190,7 +193,10 @@ class Game {
         kidLine: 'audio/kid-line.ogg',
         kidScream: 'audio/kid-scream.ogg',
         bobClass: 'audio/bob-class.ogg',
-        bobScream: 'audio/bob-scream.ogg'
+        bobScream: 'audio/bob-scream.ogg',
+        bobMess: 'audio/bob-mess.ogg',
+        honeywell: 'audio/honeywell-morning.ogg',
+        honeywellDark: 'audio/honeywell-dark.ogg'
       });
     } catch (e) { /* synth fallback is fine */ }
   }
@@ -339,6 +345,7 @@ class Game {
     else if (k === 'q') dropHands(this);
     else if (k === 'f') this.toggleTorch();
     else if (k === 'tab') { this.ui.setObjectives(true, this.objectivesHtml()); e.preventDefault(); }
+    else if (k === 'm') this.map.toggle();
     else if (k === 't' && this.online) { this.chatOpen = true; this.ui.openChat(true); document.exitPointerLock(); }
     else if (k >= '1' && k <= '6') this.player.selected = parseInt(k, 10) - 1;
   }
@@ -453,6 +460,7 @@ class Game {
       } else if (this.pendingWorld) {
         this.applyWorldState(this.pendingWorld);
         this.pendingWorld = null;
+        if (this.phase === 'day' && this.phaseTime > this.diff.day - 20) this.honeywell.morning();
       }
       this.running = true;
       this.ui.loading(false);
@@ -460,7 +468,7 @@ class Game {
       this.lockPointer();
       this.sfx.resume();
       this.ui.bigLine((this.phase === 'night' ? 'NIGHT ' : 'DAY ') + this.night);
-      if (this.night === 1) this.ui.toast('Everyone went home. Check Mrs. Honeywell\'s list.');
+      if (this.night === 1) this.ui.toast('Everyone went home. Check Mrs. Honeywell\'s list, and press M for the map.');
     }, 60);
   }
 
@@ -475,6 +483,7 @@ class Game {
     if (this.bob) this.renderer.scene.remove(this.bob.model);
     if (this.grump) this.renderer.scene.remove(this.grump.model);
     if (this.cardKid) this.cardKid.dispose();
+    if (this.honeywell) this.honeywell.dispose();
     if (this.jumpModel) { this.renderer.scene.remove(this.jumpModel); this.jumpModel = null; }
     resetMaterials();
 
@@ -503,14 +512,18 @@ class Game {
     this.bob = new Bob(this);
     this.cardKid = new CardKid(this);
     this.buildSwitches();
+    this.honeywell = new Honeywell(this);
 
     // Rebuilding the scene must not lose anyone already in the room -- this is
     // what made joiners invisible to the host.
     for (const rp of this.remotePlayers.values()) this.renderer.scene.add(rp.model);
 
+    this.map.buildBase(this.school);
+    this.map.toggle(false);
+
     const home = this.school.home;
     this.player = new Player(this);
-    this.player.x = home.cx; this.player.z = home.cz;
+    [this.player.x, this.player.z] = this.freeSpotIn(home, 0.3);
     this.player.give('flashlight');
     this.player.torchBattery = 60;
 
@@ -518,6 +531,18 @@ class Game {
       r.lightsOn = r === home || r.type === 'hall' || r.type === 'boiler';
     }
     this.applyPower();
+  }
+
+  // Somewhere in a room a body of radius r can actually stand.
+  freeSpotIn(room, r = 0.35) {
+    const s = this.school;
+    if (this.collider.free(room.cx, room.cz, r)) return [room.cx, room.cz];
+    for (let k = 0; k < 40; k++) {
+      const x = room.cx + (Math.random() - 0.5) * (room.w - 1) * s.CELL;
+      const z = room.cz + (Math.random() - 0.5) * (room.h - 1) * s.CELL;
+      if (this.collider.free(x, z, r)) return [x, z];
+    }
+    return [room.cx, room.cz];
   }
 
   buildSwitches() {
@@ -532,7 +557,18 @@ class Game {
     };
     for (const r of this.school.rooms) {
       if (r.outdoor) continue;
-      if (r.type === 'hall') { place(r.cx, this.school.wz(r.y0) + 0.36, r); continue; }
+      if (r.type === 'hall') {
+        const sc = this.school;
+        let spot = null;
+        for (let x = r.x0; x <= r.x1 && !spot; x++) {
+          if (sc.wallH[x + r.y0 * sc.W] === 1 && (x < 15 || x > 20)) spot = [sc.cwx(x), sc.wz(r.y0) + 0.36];
+        }
+        if (!spot) for (let y = r.y0; y <= r.y1 && !spot; y++) {
+          if (sc.wallV[r.x0 + y * (sc.W + 1)] === 1 && y > 2) spot = [sc.wx(r.x0) + 0.36, sc.cwz(y)];
+        }
+        if (spot) place(spot[0], spot[1], r);
+        continue;
+      }
       const d = this.school.doors.find(dd => r.doors.includes(dd.id));
       if (!d) { place(r.cx, r.cz, r); continue; }
       const insideB = d.b === r.id;
@@ -553,6 +589,7 @@ class Game {
     this.ui.showPause(false);
     this.ui.loading(false);
     this.ui.showHud(false);
+    this.map.toggle(false);
     this.resetLobbyButtons();
     this.ui.screen('menu');
     document.exitPointerLock();
@@ -577,7 +614,9 @@ class Game {
     }
     this.cardKid.resetPhase();
     this.bob.deactivate();
+    for (const d of this.school.yardDoors) if (d.locked) { d.locked = false; this.netEvent({ k: 'door', id: d.id, open: d.open, locked: false }); }
     this.messes.spawnForDay(this.night, this.seed);
+    this.toddlers.pruneTaken();
     this.toddlers.spawnForDay(this.night, this.seed);
     for (const p of this.school.props) { p.searched = false; p.checked = false; }
 
@@ -594,6 +633,7 @@ class Game {
     this.sfx.phaseDay();
     this.sfx.setDrone(0);
     this.applyPower();
+    this.honeywell.morning();
     this.netEvent({
       k: 'phase', phase: 'day', night: this.night, quests: spec, eo: this.escapeOpen,
       dawn: this.pendingDawn || null
@@ -656,7 +696,11 @@ class Game {
     this.applyMods(modIds);
     if (this.mods.long) this.phaseTime += 50;
 
-    if (this.night >= this.diff.bobFrom) this.bob.activate(this.night);
+    if (this.night >= this.diff.bobFrom) {
+      this.bob.activate(this.night);
+      const st = this.school.rooms.find(r => r.type === 'storage') || this.school.hallB;
+      [this.bob.x, this.bob.z] = this.freeSpotIn(st, 0.4);
+    }
     this.grump.beginNight(this, !!this.mods.closer);
     this.cardKid.resetPhase();
     this.sfx.phaseNight();
@@ -790,10 +834,15 @@ class Game {
       this.hostChecks(dt);
       this.flushNoise();
     }
+    this.sfx.setGenerator(this.generator.running, this.generator.condition / 100);
+    if (this.generator.running) {
+      this.sfx.setGeneratorProximity(clamp(1 - dist2(this.player.x, this.player.z, this.generator.x, this.generator.z) / 26, 0, 1));
+    }
     this.toddlers.update(dt, this);
     this.grump.present(dt, this);
     this.bob.present(dt, this);
     this.cardKid.update(dt, this);
+    this.honeywell.update(dt);
     this.groundItems.update(dt);
     this.portableLights.update(dt);
     for (const rp of this.remotePlayers.values()) rp.update(dt);
@@ -816,6 +865,7 @@ class Game {
     }
 
     this.ui.update(dt, this);
+    this.map.update(dt);
     if (this.keys.has('tab')) this.ui.setObjectives(true, this.objectivesHtml());
 
     // --- networking
@@ -963,6 +1013,12 @@ class Game {
           ui.subtitle('Bob: "GET BACK TO YOUR CLASSROOM."');
         }
         if (mine) ui.flash('spotted');
+        break;
+      case 'bobMess':
+        if (d < 30) {
+          sfx.voice('bobMess', clamp(att(30) + 0.25, 0.2, 1));
+          ui.subtitle('Bob: "These darn kids, leaving the lights on and making a mess."');
+        }
         break;
       case 'bobGrab': if (d < 30) { sfx.bobGrab(); sfx.voice('bobScream', clamp(att(30) + 0.3, 0.2, 1)); } break;
       case 'say':
@@ -1958,6 +2014,7 @@ class Game {
           if (m.quests) this.quests.load(m.quests, m.night);
           if (m.eo) { this.escapeOpen = true; for (const d of this.school.exitDoors) d.locked = false; }
           if (m.dawn) this.ui.showDawn(m.dawn.title, m.dawn.kicker, m.dawn.lines);
+          this.honeywell.morning();
           this.sfx.phaseDay();
           this.sfx.setDrone(0);
         } else {

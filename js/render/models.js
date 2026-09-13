@@ -243,6 +243,77 @@ export function makeBob() {
   return g;
 }
 
+// ---------------------------------------------------------------- mrs honeywell
+
+// The teacher. Cardigan, long skirt, grey bun, glasses on a chain, and the
+// clipboard with the day's list on it. She is the only grown-up in the building
+// who is kind to you, which is its own kind of unsettling.
+export function makeHoneywell() {
+  const g = new THREE.Group();
+  const skin = mat(0xe8c4a0), cardigan = mat(0xc89a3a), blouse = mat(0xf0ece0);
+  const skirt = mat(0x2f3a5a), hair = mat(0xb8b4ac);
+
+  const legs = [];
+  for (const s of [-1, 1]) {
+    const l = new THREE.Group();
+    l.position.set(s * 0.1, 0.5, 0);
+    l.add(part(cyl(0.05, 0.05, 0.5, 6), mat(0xd8b898), 0, -0.25, 0));
+    l.add(part(box(0.1, 0.07, 0.22), mat(0x4a2a1a), 0, -0.5, -0.04));
+    g.add(l); legs.push(l);
+  }
+  // a long A-line skirt hides most of the legs
+  g.add(part(cyl(0.2, 0.3, 0.62, 10), skirt, 0, 0.62, 0));
+
+  const body = new THREE.Group();
+  body.position.y = 1.18;
+  body.add(part(box(0.38, 0.5, 0.24), cardigan, 0, 0, 0));
+  body.add(part(box(0.16, 0.44, 0.012), blouse, 0, 0.02, -0.126));
+  for (let i = 0; i < 3; i++) body.add(part(sphere(0.012, 5), mat(0x6a4a2a), 0.1, 0.12 - i * 0.12, -0.13));
+  g.add(body);
+
+  const head = new THREE.Group();
+  head.position.y = 1.18 + 0.25 + 0.17;
+  head.add(part(cyl(0.05, 0.06, 0.1, 6), skin, 0, -0.14, 0));
+  head.add(part(sphere(0.14, 10), skin, 0, 0, 0));
+  const bun = part(sphere(0.085, 8), hair, 0, 0.08, 0.1);
+  head.add(bun);
+  const cap = part(sphere(0.148, 10), hair, 0, 0.03, 0.02);
+  cap.scale.set(1, 0.72, 1);
+  head.add(cap);
+  // glasses
+  for (const s of [-1, 1]) {
+    const lens = part(box(0.06, 0.035, 0.008), mat(0x1a1a1a), s * 0.05, 0.01, -0.135);
+    head.add(lens);
+    head.add(part(box(0.045, 0.022, 0.006), mat(0xcfe4ec, { transparent: true, opacity: 0.5 }), s * 0.05, 0.01, -0.14));
+  }
+  head.add(part(box(0.03, 0.006, 0.008), mat(0x1a1a1a), 0, 0.02, -0.136));
+  head.add(part(box(0.06, 0.012, 0.01), mat(0xa05a5a), 0, -0.06, -0.13));   // a small smile
+  g.add(head);
+
+  const arms = [];
+  for (const s of [-1, 1]) {
+    const a = new THREE.Group();
+    a.position.set(s * 0.22, 1.4, 0);
+    a.add(part(cyl(0.05, 0.045, 0.5, 6), cardigan, 0, -0.25, 0));
+    a.add(part(sphere(0.05, 6), skin, 0, -0.52, 0));
+    g.add(a); arms.push(a);
+  }
+  // the clipboard, held against her in the left hand
+  const clip = new THREE.Group();
+  clip.add(part(box(0.22, 0.3, 0.015), mat(0x8a6a44), 0, 0, 0));
+  clip.add(part(box(0.19, 0.25, 0.004), mat(0xf4f0e4), 0, -0.01, -0.01));
+  clip.add(part(box(0.08, 0.03, 0.02), mat(0x9aa0a4), 0, 0.15, -0.01));
+  for (let i = 0; i < 4; i++) clip.add(part(box(0.14, 0.008, 0.002), mat(0x3b5a9a), 0, 0.07 - i * 0.045, -0.013));
+  clip.position.set(0, -0.48, -0.1);
+  clip.rotation.x = -0.4;
+  arms[0].add(clip);
+  arms[0].rotation.x = -0.6;
+
+  g.userData.parts = { body, head, arms, legs, clip };
+  g.userData.eyeHeight = 1.6;
+  return g;
+}
+
 // ---------------------------------------------------------------- toddlers
 
 export function makeToddler(seedIdx = 0) {

@@ -55,6 +55,8 @@ export class Bob {
     this.loseTimer = 0;
     this.grabCd = 0;
     this.lightsOffCd = 6;
+    this.messLineCd = 8;
+    this.messCheckT = 1;
     this.animT = 0;
     this.stepAcc = 0;
     this.humT = 3;
@@ -115,9 +117,17 @@ export class Bob {
     return bestScore > 0.14 ? best : null;
   }
 
+  // "These darn kids..." -- not every time, or it stops being funny.
+  grumble(game) {
+    if (this.messLineCd > 0) return;
+    this.messLineCd = 35;
+    game.fx('bobMess', this.x, this.z);
+  }
+
   update(dt, game) {
     if (this.state === 'off') return;
     this.grabCd = Math.max(0, this.grabCd - dt);
+    this.messLineCd = Math.max(0, this.messLineCd - dt);
     this.animT += dt;
 
     let speed = 0;
@@ -140,7 +150,14 @@ export class Bob {
           if (r && this.night >= 2 && r !== game.school.home && r.type !== 'boiler' && r.type !== 'hall' && r.lightsOn) {
             game.setRoomLights(r, false, 'bob');
             game.fx('switch', this.x, this.z);
+            this.grumble(game);
           }
+        }
+        // Walking past a mess nobody cleaned up sets him off too.
+        this.messCheckT -= dt;
+        if (this.messCheckT <= 0) {
+          this.messCheckT = 1;
+          if (game.messes.nearest(this.x, this.z, 3.2)) this.grumble(game);
         }
         if (seen) this.startChase(seen, game);
         break;

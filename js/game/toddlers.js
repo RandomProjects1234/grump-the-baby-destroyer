@@ -21,13 +21,17 @@ export class Toddlers {
   spawnForDay(night, seed) {
     const rng = makeRng((seed ^ (night * 7717)) >>> 0);
     const s = this.game.school;
-    const rooms = s.rooms.filter(r => !r.outdoor && r.type !== 'hall' && r !== s.home && r.type !== 'boiler');
+    // Never behind the staff room's locked door.
+    const rooms = s.rooms.filter(r => !r.outdoor && r.type !== 'hall' && r !== s.home && r.type !== 'boiler' && r.type !== 'staff');
     const count = clamp(2 + Math.floor(night / 2), 2, 5);
     for (let i = 0; i < count; i++) {
       const r = rooms[Math.floor(rng() * rooms.length)];
-      let x = r.cx + (rng() - 0.5) * (r.w - 1.4) * s.CELL;
-      let z = r.cz + (rng() - 0.5) * (r.h - 1.4) * s.CELL;
-      if (!this.game.collider.free(x, z, 0.3)) { x = r.cx; z = r.cz; }
+      let x = r.cx, z = r.cz;
+      for (let k = 0; k < 12; k++) {
+        const tx = r.cx + (rng() - 0.5) * (r.w - 1.4) * s.CELL;
+        const tz = r.cz + (rng() - 0.5) * (r.h - 1.4) * s.CELL;
+        if (this.game.collider.free(tx, tz, 0.3)) { x = tx; z = tz; break; }
+      }
       this.add(x, z, rng);
     }
   }
@@ -55,6 +59,12 @@ export class Toddlers {
   }
 
   byId(id) { return this.list.find(t => t.id === id) || null; }
+
+  // The ones Grump took are not coming back; stop sending them every snapshot.
+  pruneTaken() {
+    for (const t of this.list) if (t.state === 'taken') this.game.renderer.scene.remove(t.model);
+    this.list = this.list.filter(t => t.state !== 'taken');
+  }
   get saved() { return this.list.filter(t => t.state === 'safe').length; }
   get lost() { return this.list.filter(t => t.state === 'lost').length; }
 
@@ -80,6 +90,7 @@ export class Toddlers {
   // whether the player on this machine did it, which decides who gets thanked.
   place(t, x, z, game, local = true) {
     t.x = x; t.z = z;
+    t.putDownAt = game.time;
     t.model.visible = true;
     t.model.position.set(x, 0, z);
     const room = game.school.roomAt(x, z);

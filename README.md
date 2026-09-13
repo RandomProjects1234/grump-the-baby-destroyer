@@ -39,7 +39,8 @@ the long night...), and from night 10 it rolls two.
 
 ### Day work
 
-Every morning **Mrs. Honeywell's list** is waiting: three or four jobs (four
+Every morning your teacher, **Mrs. Honeywell**, is standing at the chalkboard in
+your classroom. She reads out the day, and her list is waiting: three or four jobs (four
 from night 6) that send you out into the building. Each one you finish leaves a
 reward in the crib in your classroom.
 
@@ -51,6 +52,15 @@ reward in the crib in your classroom.
 | Explore | Check on the playground, switch the gym lights on |
 | Lost things | Find Mr. Wiggles the class hamster, return a shiny card to Lost & Found |
 | Grump's crayon | Give him back his crayon — the only thing that ever calms him (before day 4) |
+
+Talk to her any time during the day and she goes over the list again. Sit in a
+dark classroom — switch off, or no generator — and she will tell you about it.
+She is not by the board any more in the last seconds before dark, and nobody
+sees her leave.
+
+Press **M** for the map: every room, your friends, the little ones, food, fuel,
+parts, messes, today's job rooms outlined, and job items starred. Bob never
+appears on it. Grump only does in daylight, before day 4.
 
 **You have to eat.** Your tummy empties over a day and a night; at zero you
 start losing health. Sandwiches, milk and apples live in the cafeteria, kitchen
@@ -110,6 +120,7 @@ the power dies he comes and stands very close.
 | `Q` | put down whatever is in your hands |
 | `F` | torch |
 | `RMB` | peek, while hidden |
+| `M` | map of the school |
 | `Tab` | objectives |
 | `T` | chat (co-op) |
 | `Esc` | pause |
@@ -166,6 +177,7 @@ js/
     player.js         movement, stats, carrying, hiding
     threats.js        Bob and Grump: host-only AI + per-player presentation
     quests.js         Mrs. Honeywell's list
+    honeywell.js      Mrs. Honeywell herself
     cardkid.js        the boy with the cards, and the thing that takes him
     toddlers.js       the children you are trying to keep
     systems.js        generator, messes, dropped items, portable lights
@@ -173,12 +185,14 @@ js/
     items.js          items and loot tables
     dialogue.js       Grump's questions
   ui/ui.js            all DOM handling
+  ui/map.js           minimap and the full map (M)
   net/net.js          PeerJS host/client
 ```
 
 ## Notes for anyone poking at it
 
-- **Everything is procedural** except seven recorded voice lines. Textures are
+- **Everything is procedural** except ten recorded voice lines: Grump (3),
+  Bob (3, pitched down), Mrs. Honeywell (2) and the card boy (2). Textures are
   painted into canvases, models are boxes, all other audio is synthesised.
 - **The school is a pure function of the seed.** `generateSchool(seed)` returns
   the same building on every machine, which is the whole basis of multiplayer.

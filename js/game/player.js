@@ -108,7 +108,7 @@ export class Player {
 
   goDown(game, source) {
     this.downed = true;
-    this.downTimer = 45;
+    this.downTimer = game.online ? 45 : 4;
     this.hidden = null;
     this.torchOn = false;
     if (this.carryingToddler) game.releaseToddler(this.hands.toddler, this.x, this.z);
