@@ -246,6 +246,12 @@ export function findInteraction(game) {
     }));
   }
 
+  // --- Meredith, at the serving counter
+  const mer = game.meredith;
+  if (mer && mer.visible && dist2(p.x, p.z, mer.x, mer.z) < REACH + 0.6) {
+    consider(mer.x, mer.z, () => mer.interaction(), 1.2);
+  }
+
   // --- grump
   const g = game.grump;
   if (g && dist2(p.x, p.z, g.x, g.z) < REACH + 0.6) {

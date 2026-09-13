@@ -69,6 +69,25 @@ start losing health. Sandwiches, milk and apples live in the cafeteria, kitchen
 and staff room, and a few lunchboxes turn up around the school every morning
 (press R to open one).
 
+**Meredith the lunch lady** stands at the cafeteria counter all day. Talk to her
+for a tray of lunch -- after a tiny three-lane rhythm game (A S D). Keep the
+beat for a gold tray (four things to eat); miss everything and she still gives
+you something. One tray each, each day.
+
+**Jerry the gym teacher** comes sprinting out of the gym now and then, blowing
+his whistle, because you are slacking off. You cannot say no. He picks one of
+three pop-up games -- **laps** (a top-down racer round a track; three laps, the
+grass is slow), **dumbbells** (spam click to lift, four reps), or **jump rope**
+(press on the beat, six in a row). Each takes well under a minute if you are
+good. Pass and you stay fit for a while (stamina drains at half speed); fail and
+the effort makes you hungry. Hide in a locker and he gives up.
+
+**The Big Boys Club.** Once a run, on day 2 or 3, three big kids corner you in a
+hall. It is a cutscene, and it is the one time Grump is on your side.
+
+Anything searchable can always be searched -- again and again. The first
+rummage is the good one; each repeat on the same day finds less.
+
 Between jobs: search containers, fuel the generator, clean up (messes left at
 dusk make the generator drink faster), and talk to Grump — ignoring him all day
 costs more than talking to him.
@@ -180,6 +199,9 @@ js/
     threats.js        Bob and Grump: host-only AI + per-player presentation
     quests.js         Mrs. Honeywell's list
     honeywell.js      Mrs. Honeywell herself
+    jerry.js          Jerry the gym teacher
+    meredith.js       Meredith the lunch lady
+    bullies.js        the Big Boys Club cutscene
     cardkid.js        the boy with the cards, and the thing that takes him
     toddlers.js       the children you are trying to keep
     systems.js        generator, messes, dropped items, portable lights
@@ -188,13 +210,15 @@ js/
     dialogue.js       Grump's questions
   ui/ui.js            all DOM handling
   ui/map.js           minimap and the full map (M)
+  ui/minigames.js     laps, dumbbells, jump rope, the lunch line
   net/net.js          PeerJS host/client
 ```
 
 ## Notes for anyone poking at it
 
-- **Everything is procedural** except ten recorded voice lines: Grump (3),
-  Bob (3, pitched down), Mrs. Honeywell (2) and the card boy (2). Textures are
+- **Everything is procedural** except thirteen recorded voice lines: Grump (3),
+  Bob (3, pitched down), Mrs. Honeywell (2), Jerry (2), Meredith (1) and the
+  card boy (2). Textures are
   painted into canvases, models are boxes, all other audio is synthesised.
 - **The school is a pure function of the seed.** `generateSchool(seed)` returns
   the same building on every machine, which is the whole basis of multiplayer.

@@ -89,6 +89,8 @@ export class Sfx {
 
   // ---------------------------------------------------------------- atoms
   tone(freq, dur, type = 'square', gain = 0.16, slide = 0, delay = 0) {
+    // exponential ramps cannot reach zero: a silent tone is simply skipped
+    if (!(gain > 0.001)) return;
     const ctx = this.ensure(); if (!ctx) return;
     const t = ctx.currentTime + delay;
     const o = ctx.createOscillator(), g = ctx.createGain();
@@ -103,6 +105,7 @@ export class Sfx {
   }
 
   noise(dur = 0.12, gain = 0.18, freq = 1200, q = 1, type = 'bandpass', delay = 0) {
+    if (!(gain > 0.001)) return;
     const ctx = this.ensure(); if (!ctx) return;
     const t = ctx.currentTime + delay;
     const src = ctx.createBufferSource();

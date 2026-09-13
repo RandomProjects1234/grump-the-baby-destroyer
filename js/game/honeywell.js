@@ -22,7 +22,9 @@ const TALK = [
   'Keep the lights on tonight. Promise me.',
   'Mind the boy in the green dungarees. Be polite. It will not help, but be polite.',
   'If you hear Bob humming, find somewhere small to be.',
-  'Eat something. You cannot be brave on an empty tummy.'
+  'Eat something. You cannot be brave on an empty tummy.',
+  'Meredith in the cafeteria will give you a tray of lunch. Keep the beat for her.',
+  'If Jerry comes running with that whistle, just do what he says. It is quicker.'
 ];
 
 const MORNING_LINE = 'Mrs. Honeywell: "Can you get all these quests done for me? You can go home at the end of ' +

@@ -232,6 +232,20 @@ export class MapView {
       if (labels) this.label(g, 'Mrs. Honeywell', x, z + 12 * inv, inv, '#e8c060');
     }
 
+    // Meredith at the counter, and Jerry when he is out of the gym
+    if (game.meredith && game.meredith.visible) {
+      const x = this.px(game.meredith.x), z = this.pz(game.meredith.z);
+      g.fillStyle = '#6ad0b0';
+      this.dot(g, x, z, 4 * inv);
+      if (labels) this.label(g, 'Meredith (lunch)', x, z + 12 * inv, inv, '#6ad0b0');
+    }
+    if (game.jerry && game.jerry.visible) {
+      const x = this.px(game.jerry.x), z = this.pz(game.jerry.z);
+      g.fillStyle = '#ff5a3a';
+      this.dot(g, x, z, 4 * inv);
+      if (labels) this.label(g, 'Jerry', x, z + 12 * inv, inv, '#ff5a3a');
+    }
+
     // Grump, only while he is still pretending
     if (game.grump && game.phase === 'day' && !game.grump.turned) {
       const x = this.px(game.grump.x), z = this.pz(game.grump.z);

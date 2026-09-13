@@ -421,3 +421,18 @@ table.keys td:first-child {
 #hud.cinematic #clock, #hud.cinematic #powerpill { opacity: 0; transition: opacity .4s; }
 #hud.cinematic #subtitle { bottom: calc(11vh + 18px); z-index: 5; font-size: 16px; }
 #hud.cinematic #bigline { z-index: 5; }
+
+.lg.lunch { background: #6ad0b0; }
+.lg.gymt { background: #ff5a3a; }
+
+/* minigames */
+#minigame { background: rgba(0, 0, 0, .55); z-index: 30; }
+.mgbox { background: #1d201b; border: 3px solid #e5a83a; border-radius: 14px; padding: 12px 14px 14px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.6); width: min(600px, 96vw); }
+.mghead { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
+.mghead b { font-family: var(--display); letter-spacing: 3px; font-size: 22px; color: #ffd23f; }
+#mg-timer { font: bold 20px "Trebuchet MS", sans-serif; color: #e8e2d0; }
+#mg-timer.low { color: #ff6a4a; }
+#mg-canvas { width: 100%; height: auto; display: block; border-radius: 8px; background: #000; touch-action: none; }
+#mg-help { margin-top: 8px; color: #cfc8b6; font-size: 13px; line-height: 1.4; }
+#mg-help b { color: #ffd23f; }

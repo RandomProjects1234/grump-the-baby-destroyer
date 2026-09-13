@@ -26,6 +26,9 @@ import { findInteraction, useSelected, dropHands } from './game/interact.js';
 import { CardKid } from './game/cardkid.js';
 import { Honeywell } from './game/honeywell.js';
 import { Bullies } from './game/bullies.js';
+import { Jerry } from './game/jerry.js';
+import { Meredith } from './game/meredith.js';
+import { Minigames } from './ui/minigames.js';
 import { Quests } from './game/quests.js';
 import { rollLoot, DRAWINGS, ITEMS, itemName, isBig, lunchboxContents } from './game/items.js';
 import { pickQuestion } from './game/dialogue.js';
@@ -56,7 +59,7 @@ const NIGHT_MODS = [
 ];
 
 // Client actions the host accepts for quest progress on trust.
-const CLIENT_QUEST_EVENTS = new Set(['eat', 'hide', 'drawing']);
+const CLIENT_QUEST_EVENTS = new Set(['eat', 'hide', 'drawing', 'lunch', 'gym']);
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -112,6 +115,7 @@ class RemotePlayer {
     this.hiddenPropId = s.hid === undefined ? null : s.hid;
     this.taped = !!s.tp;
     this.dead = !!s.dd;
+    this.busy = !!s.mg;
     if (s.tod !== undefined) this.carrying = s.tod;
     if (s.n) { this.name = s.n; this.setName(s.n); }
   }
@@ -144,6 +148,7 @@ class Game {
     this.sfx = new Sfx();
     this.sfx.setVolume(this.settings.vol);
     this.ui = new UI(this);
+    this.minigames = new Minigames(this);
     this.map = new MapView(this);
     this.net = new Net(this);
 
@@ -199,7 +204,10 @@ class Game {
         bobScream: 'audio/bob-scream.ogg',
         bobMess: 'audio/bob-mess.ogg',
         honeywell: 'audio/honeywell-morning.ogg',
-        honeywellDark: 'audio/honeywell-dark.ogg'
+        honeywellDark: 'audio/honeywell-dark.ogg',
+        jerryLaps: 'audio/jerry-laps.ogg',
+        jerryLift: 'audio/jerry-2.ogg',
+        meredith: 'audio/meredith-lunch.ogg'
       });
     } catch (e) { /* synth fallback is fine */ }
   }
@@ -291,6 +299,7 @@ class Game {
     });
     document.addEventListener('mousedown', e => {
       if (!this.locked) return;
+      if (this.minigames.active) { if (e.button === 0) this.minigames.key('click'); return; }
       if (e.button === 0) { this.input.interact = true; this.clickQueued = true; }
       if (e.button === 2) this.input.peek = true;
     });
@@ -334,6 +343,7 @@ class Game {
       if (b && !b.disabled) b.click();
       return;
     }
+    if (this.minigames.active) { this.minigames.key(k); return; }
     if (this.overlayOpen()) {
       if (k === 'e' || k === ' ' || k === 'enter') {
         if (!$('#drawing').classList.contains('hidden')) $('#draw-close').click();
@@ -362,7 +372,8 @@ class Game {
     return !$('#dialogue').classList.contains('hidden')
       || !$('#drawing').classList.contains('hidden')
       || !$('#dawn').classList.contains('hidden')
-      || !$('#over').classList.contains('hidden');
+      || !$('#over').classList.contains('hidden')
+      || !!(this.minigames && this.minigames.active);
   }
 
   setPaused(on) {
@@ -488,6 +499,9 @@ class Game {
     if (this.cardKid) this.cardKid.dispose();
     if (this.honeywell) this.honeywell.dispose();
     if (this.bullies) this.bullies.dispose();
+    if (this.jerry) this.jerry.dispose();
+    if (this.meredith) this.meredith.dispose();
+    if (this.minigames) this.minigames.abort();
     if (this.jumpModel) { this.renderer.scene.remove(this.jumpModel); this.jumpModel = null; }
     resetMaterials();
 
@@ -518,6 +532,8 @@ class Game {
     this.buildSwitches();
     this.honeywell = new Honeywell(this);
     this.bullies = new Bullies(this);
+    this.jerry = new Jerry(this);
+    this.meredith = new Meredith(this);
 
     // Rebuilding the scene must not lose anyone already in the room -- this is
     // what made joiners invisible to the host.
@@ -618,6 +634,8 @@ class Game {
       this.fx('toast', 0, 0, { text: 'He is not asking questions any more. He is in the building with you.' });
     }
     this.cardKid.resetPhase();
+    this.jerry.resetDay();
+    this.meredith.resetDay();
     this.bob.deactivate();
     for (const d of this.school.yardDoors) if (d.locked) { d.locked = false; this.netEvent({ k: 'door', id: d.id, open: d.open, locked: false }); }
     this.messes.spawnForDay(this.night, this.seed);
@@ -783,6 +801,7 @@ class Game {
     this.lastStep = now;
     if (!this.running) { this.renderer.render(); return; }
 
+    if (this.minigames.active && !this.paused) this.minigames.update(dt);
     const blocked = this.paused || this.overlayOpen();
     // Solo pauses the world. Co-op never does: the school keeps going for
     // everyone else while one player has a menu open.
@@ -853,6 +872,8 @@ class Game {
     this.bullies.update(dt);
     this.bullies.hideRealGrump();
     this.honeywell.update(dt);
+    this.jerry.update(dt);
+    this.meredith.update(dt);
     this.groundItems.update(dt);
     this.portableLights.update(dt);
     for (const rp of this.remotePlayers.values()) rp.update(dt);
@@ -1440,8 +1461,9 @@ class Game {
 
   threatTargets() {
     const out = [];
-    if (!this.player.dead) out.push(this.player);
-    for (const rp of this.remotePlayers.values()) if (!rp.dead) out.push(rp);
+    // Nobody hunts a baby who is busy with a teacher's minigame.
+    if (!this.player.dead && !this.player.busy) out.push(this.player);
+    for (const rp of this.remotePlayers.values()) if (!rp.dead && !rp.busy) out.push(rp);
     return out;
   }
 
@@ -1596,6 +1618,7 @@ class Game {
   }
 
   onPlayerDead() {
+    this.minigames.abort();
     if (this.online) {
       // Co-op: you become a ghost and watch. The game is over when everyone is.
       this.ui.bigLine('YOU ARE GONE');
@@ -2041,6 +2064,8 @@ class Game {
           if (m.eo) { this.escapeOpen = true; for (const d of this.school.exitDoors) d.locked = false; }
           if (m.dawn) this.ui.showDawn(m.dawn.title, m.dawn.kicker, m.dawn.lines);
           this.honeywell.morning();
+          this.jerry.resetDay();
+          this.meredith.resetDay();
           this.sfx.phaseDay();
           this.sfx.setDrone(0);
         } else {

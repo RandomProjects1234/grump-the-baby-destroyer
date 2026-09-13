@@ -47,6 +47,11 @@ const TEMPLATES = {
     desc: s => `Clean up ${s.g} messes. Mrs. Honeywell hates a mess.`,
     event: 'clean', goal: n => Math.min(5, 2 + Math.floor(n / 3)), tier: 'good'
   },
+  lunch: {
+    title: () => 'Lunch from Meredith',
+    desc: () => 'Get a tray from Meredith at the cafeteria counter. Keep the beat!',
+    event: 'lunch', goal: () => 1, tier: 'basic'
+  },
   eat: {
     title: () => 'Lunch time',
     desc: s => `Eat ${s.g} thing${s.g > 1 ? 's' : ''}. Big babies need big lunches.`,
@@ -137,7 +142,7 @@ export class Quests {
       // Day one teaches the loop.
       picks = ['genStart', 'eat', 'rescue'];
     } else {
-      const pool = ['fuel', 'repair', 'clean', 'eat', 'feed', 'rescue', 'searchRoom', 'lights',
+      const pool = ['fuel', 'repair', 'clean', 'eat', 'lunch', 'feed', 'rescue', 'searchRoom', 'lights',
         'visit', 'hide', 'drawing', 'hamster', 'holocard'];
       if (!g.grump.turned) pool.push('crayon', 'crayon');
       // The big three (fuel, food, children) come up more than the flavour jobs.
@@ -161,6 +166,7 @@ export class Quests {
   // One job, with a room it can actually be done in -- or null.
   specFor(t, night, rng) {
     const tpl = TEMPLATES[t];
+    if (t === 'lunch' && !this.game.school.rooms.some(r => r.type === 'cafeteria' || r.type === 'kitchen')) return null;
     let place = null;
     if (PLACES[t]) {
       let places = PLACES[t].filter(type => this.game.school.rooms.some(r => r.type === type));

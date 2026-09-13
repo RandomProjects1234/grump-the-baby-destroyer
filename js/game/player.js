@@ -202,7 +202,9 @@ export class Player {
       this.x = nx; this.z = nz;
 
       // --- stamina
-      if (this.sprinting && moved > 0.001) this.stamina = clamp(this.stamina - dt * 21, 0, 100);
+      // Passing Jerry's gym class leaves you fit for a while: half the drain.
+      const fit = game.jerry && game.jerry.fitT > 0;
+      if (this.sprinting && moved > 0.001) this.stamina = clamp(this.stamina - dt * (fit ? 10.5 : 21), 0, 100);
       else this.stamina = clamp(this.stamina + dt * (this.crawling ? 15 : 9), 0, 100);
 
       // --- footsteps and the noise they make
@@ -313,6 +315,7 @@ export class Player {
       tod: this.carryingToddler ? this.hands.toddler : null,
       hid: this.hidden ? this.hidden.id : null,
       tp: this.tapedIn > 0 ? 1 : 0,
+      mg: this.busy ? 1 : 0,
       dd: this.dead ? 1 : 0
     };
   }
