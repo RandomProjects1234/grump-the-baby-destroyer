@@ -17,7 +17,7 @@ const GAMES = ['laps', 'dumbbells', 'rope'];
 const CALLS = {
   laps: { voice: 'jerryLaps', text: 'Jerry: "Are you slacking off? Three laps around this gym, now!"' },
   dumbbells: { voice: 'jerryLift', text: 'Jerry: "Yeah, strength! Lift those dumbbells -- it\'s dumbbell time! Let\'s go, almost there! Let\'s go! W, you did it!"' },
-  rope: { voice: null, text: 'Jerry: *FWEEEET* "Jump rope! Six in a row! Nobody leaves until I see six!"' }
+  rope: { voice: 'jerryRope', text: 'Jerry: "Jump rope time! One, two, three, four, five, six -- let\'s go!"' }
 };
 
 export class Jerry {

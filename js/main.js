@@ -207,6 +207,7 @@ class Game {
         honeywellDark: 'audio/honeywell-dark.ogg',
         jerryLaps: 'audio/jerry-laps.ogg',
         jerryLift: 'audio/jerry-2.ogg',
+        jerryRope: 'audio/jerry-3.ogg',
         meredith: 'audio/meredith-lunch.ogg'
       });
     } catch (e) { /* synth fallback is fine */ }

@@ -216,8 +216,8 @@ js/
 
 ## Notes for anyone poking at it
 
-- **Everything is procedural** except thirteen recorded voice lines: Grump (3),
-  Bob (3, pitched down), Mrs. Honeywell (2), Jerry (2), Meredith (1) and the
+- **Everything is procedural** except fourteen recorded voice lines: Grump (3),
+  Bob (3, pitched down), Mrs. Honeywell (2), Jerry (3), Meredith (1) and the
   card boy (2). Textures are
   painted into canvases, models are boxes, all other audio is synthesised.
 - **The school is a pure function of the seed.** `generateSchool(seed)` returns

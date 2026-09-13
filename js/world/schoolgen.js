@@ -601,8 +601,14 @@ export function generateSchool(seed) {
         addProp('seesaw', cwx(r.x0 + 6), cwz(r.y1 - 2), 0.4, { room: r.id, hw: 1.4, hd: 0.3, solid: false });
         addProp('tube', cwx(r.x1 - 7), cwz(r.y1 - 2), 1.2, { room: r.id, hw: 1.2, hd: 0.6, hide: 'box' });
         for (let i = 0; i < 4; i++) {
-          addProp('tree', cwx(rng.int(r.x0, r.x1)), cwz(rng.int(r.y0, r.y1)), rng() * 6.28,
-            { room: r.id, hw: 0.35, hd: 0.35 });
+          let tx = rng.int(r.x0, r.x1), ty = rng.int(r.y0, r.y1);
+          const rot = rng() * 6.28;
+          // never plant one in front of a door into the playground
+          for (let k = 0; k < 12 && doors.some(d => d.yard && Math.abs(tx - d.gx) <= 1 && Math.abs(ty - d.gy) <= 1); k++) {
+            tx = rng.int(r.x0, r.x1); ty = rng.int(r.y0, r.y1);
+          }
+          if (doors.some(d => d.yard && Math.abs(tx - d.gx) <= 1 && Math.abs(ty - d.gy) <= 1)) continue;
+          addProp('tree', cwx(tx), cwz(ty), rot, { room: r.id, hw: 0.35, hd: 0.35 });
         }
         addProp('bench', cwx(r.x0 + 1), cwz(r.y1 - 3), Math.PI / 2, { room: r.id, hw: 0.9, hd: 0.3, hide: 'under' });
         break;

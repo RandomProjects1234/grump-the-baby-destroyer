@@ -166,8 +166,17 @@ export function findInteraction(game) {
         return { label: 'The front doors', hint: 'Chained from the outside.', hold: 0, act: () => { game.sfx.deny(); game.ui.toast('Chained. Something rattles on the far side.'); } };
       }
       if (d.locked) {
-        if (p.hasItem('key')) return { label: 'Unlock', hold: 1.0, act: () => { p.take('key'); d.locked = false; game.toggleDoor(d, true); game.ui.toast('Unlocked.'); } };
-        return { label: 'Locked', hint: 'A staff key would open it.', hold: 0, act: () => { game.sfx.deny(); game.emitNoise(d.x, d.z, 0.4); } };
+        const why = d.yard ? 'The playground is locked for the night. It opens again in the morning.' : 'The staff room is kept locked.';
+        if (p.hasItem('key')) {
+          return {
+            label: 'Unlock with your staff key', hint: 'Hold E. ' + why, hold: 0.5,
+            act: () => { p.take('key'); d.locked = false; game.toggleDoor(d, true); game.ui.toast('Unlocked. The key stays in the lock.'); }
+          };
+        }
+        return {
+          label: d.yard ? 'Locked for the night' : 'Locked', hint: why + ' A staff key would open it.', hold: 0,
+          act: () => { game.sfx.deny(); game.emitNoise(d.x, d.z, 0.4); game.ui.toast(why + ' A staff key would open it.'); }
+        };
       }
       return { label: d.open ? 'Close the door' : 'Open the door', hold: 0, carryOk: true, act: () => game.toggleDoor(d, !d.open) };
     });
@@ -382,8 +391,18 @@ export function useSelected(game) {
       p.take('drawing'); game.readDrawing(); break;
     case 'flashlight':
       game.toggleTorch(); break;
-    case 'key':
-      game.ui.toast('Use it on a locked door.'); game.sfx.deny(); break;
+    case 'key': {
+      // Selected key + R near a locked door: unlock it, same as holding E.
+      let door = null, bd = 3.2;
+      for (const d of game.school.doors) {
+        if (!d.locked || d.exit) continue;
+        const dd = dist2(p.x, p.z, d.x, d.z);
+        if (dd < bd) { bd = dd; door = d; }
+      }
+      if (!door) { game.ui.toast('Walk up to a locked door (the staff room) and press R or hold E.'); game.sfx.deny(); break; }
+      p.take('key'); door.locked = false; game.toggleDoor(door, true); game.ui.toast('Unlocked. The key stays in the lock.');
+      break;
+    }
     default:
       game.ui.toast(`${itemName(kind)} is used elsewhere.`); game.sfx.deny();
   }
