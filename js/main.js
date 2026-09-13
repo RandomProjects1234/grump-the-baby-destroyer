@@ -121,7 +121,9 @@ class RemotePlayer {
     this.lastX = this.x; this.lastZ = this.z;
     this.model.visible = !this.hidden && !this.dead;
     this.model.position.set(this.x, this.downed ? -0.18 : 0, this.z);
-    this.model.rotation.y = this.yaw + Math.PI;
+    // Baby models face -Z, the same way the camera looks, so no half-turn here
+    // (NPCs add PI because their yaw is the direction they walk, atan2(dx, dz)).
+    this.model.rotation.y = this.yaw;
     this.model.rotation.x = this.downed ? -1.2 : 0;
     this.model.scale.setScalar(this.crawling && !this.downed ? 0.8 : 1);
     animateWalk(this.model, this.animT, this.speed);

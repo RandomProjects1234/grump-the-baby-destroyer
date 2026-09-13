@@ -50,6 +50,8 @@ export class Generator {
       game.feedback(actor, this.fuel <= 1 ? 'No fuel in it.' : 'Too broken to turn over.', 'genFail');
       return false;
     }
+    // A worn engine can cough a few times, but the fourth pull always catches:
+    // being unable to start it at all with fuel and parts in hand is not fun.
     const chance = clamp(0.35 + this.condition / 140, 0.35, 0.98);
     if (Math.random() > chance && this.startFails < 3) {
       this.startFails++;

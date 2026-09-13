@@ -357,6 +357,22 @@ export class Grump {
 
   place(x, z) { this.x = x; this.z = z; this.px = undefined; this.walker.clear(); }
 
+  // Put him at the first candidate that is clear of furniture and can walk to
+  // your classroom. pick() returns [x, z]; fallback is used if nothing fits.
+  placeSafely(game, pick, fallback) {
+    const h = game.school.home;
+    for (let k = 0; k < 40; k++) {
+      const [x, z] = pick();
+      if (!game.school.roomAt(x, z)) continue;
+      if (!game.collider.free(x, z, 0.4)) continue;
+      if (!game.nav.path(x, z, h.cx, h.cz)) continue;
+      this.place(x, z);
+      return true;
+    }
+    this.place(...fallback);
+    return false;
+  }
+
   anger(amount, game, why) {
     const before = this.stage;
     this.resent = clamp(this.resent + amount, 0, 130);
@@ -370,7 +386,11 @@ export class Grump {
     this.campSpot = null;
     const rooms = game.school.rooms.filter(r => r.type !== 'hall' && !r.outdoor && r !== game.school.home);
     const r = rooms[(Math.random() * rooms.length) | 0];
-    this.place(r.cx, r.cz);
+    const S = game.school.CELL;
+    this.placeSafely(game, () => [
+      r.cx + (Math.random() - 0.5) * Math.max(0, r.w - 1) * S,
+      r.cz + (Math.random() - 0.5) * Math.max(0, r.h - 1) * S
+    ], game.freeSpotIn(r, 0.4));
   }
 
   beginNight(game, closer) {
@@ -379,7 +399,9 @@ export class Grump {
     if (closer) {
       const h = game.school.home;
       const d = game.school.doors.find(dd => h.doors.includes(dd.id));
-      if (d) this.place(d.x + (Math.random() - 0.5) * 3, d.z + (Math.random() - 0.5) * 3);
+      // Just outside your door -- in the hall, not in the doorframe or a desk.
+      if (d) this.placeSafely(game, () => [d.x + (Math.random() - 0.5) * 4, d.z + (Math.random() - 0.5) * 4],
+        [this.x, this.z]);
     }
     if (this.turned) game.fx('big', 0, 0, { text: 'NO MORE QUESTIONS', reveal: true });
     this.walker.clear();
@@ -606,6 +628,7 @@ export class Grump {
       if (!game.collider.free(x, z, 0.4)) continue;
       if (game.collider.lineClear(t.x, t.z, x, z)) continue;
       if (!game.nav.path(x, z, t.x, t.z)) continue;
+      if (game.school.roomAt(x, z) === game.school.home) continue;
       this.place(x, z);
       game.fx('whisper', x, z, { strong: true });
       return true;

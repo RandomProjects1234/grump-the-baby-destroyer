@@ -143,27 +143,37 @@ export class Quests {
       // The big three (fuel, food, children) come up more than the flavour jobs.
       pool.push('fuel', 'eat', 'rescue');
       const want = night >= 6 ? 4 : 3;
-      picks = [];
       rng.shuffle(pool);
+      // Jobs that cannot happen in this school (no such room) are skipped
+      // while picking, so the list is always full length.
+      const spec = [];
       for (const t of pool) {
-        if (picks.length >= want) break;
-        if (picks.includes(t)) continue;
-        picks.push(t);
+        if (spec.length >= want) break;
+        if (spec.some(sp => sp.t === t)) continue;
+        const sp = this.specFor(t, night, rng);
+        if (sp) spec.push(sp);
       }
+      return spec;
     }
-    const spec = picks.map(t => {
-      const tpl = TEMPLATES[t];
-      let places = PLACES[t];
+    return picks.map(t => this.specFor(t, night, rng)).filter(Boolean);
+  }
+
+  // One job, with a room it can actually be done in -- or null.
+  specFor(t, night, rng) {
+    const tpl = TEMPLATES[t];
+    let place = null;
+    if (PLACES[t]) {
+      let places = PLACES[t].filter(type => this.game.school.rooms.some(r => r.type === type));
       if (t === 'searchRoom') {
         // Only rooms with enough to search, so the job is always finishable.
         places = places.filter(type => this.searchableIn(type) >= 3);
       }
-      const place = places && places.length ? rng.pick(places) : null;
-      let goal = tpl.goal(night);
-      if (t === 'feed' || t === 'rescue') goal = Math.min(goal, 2);
-      return { t, p: place, g: goal };
-    }).filter(sp => !PLACES[sp.t] || sp.p);
-    return spec;
+      if (!places.length) return null;
+      place = rng.pick(places);
+    }
+    let goal = tpl.goal(night);
+    if (t === 'feed' || t === 'rescue') goal = Math.min(goal, 2);
+    return { t, p: place, g: goal };
   }
 
   searchableIn(type) {
