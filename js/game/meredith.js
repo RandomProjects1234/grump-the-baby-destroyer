@@ -34,7 +34,7 @@ export class Meredith {
     this.room = game.school.rooms.find(r => r.type === 'cafeteria')
       || game.school.rooms.find(r => r.type === 'kitchen') || null;
     this.place();
-    this.box = game.collider.addDynamic({ x: this.x, z: this.z, hw: 0.3, hd: 0.3, active: false });
+    this.box = game.collider.addDynamic({ x: this.x, z: this.z, hw: 0.3, hd: 0.3, active: false, npc: true });
   }
 
   place() {

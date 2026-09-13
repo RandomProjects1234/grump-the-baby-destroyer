@@ -53,23 +53,72 @@ export class Collider {
   }
 
   // Slide along one axis at a time -- cheap, and never lets you tunnel a wall.
+  //
+  // A box you are already overlapping (you came out of a crate badly, a door
+  // shut on you) is ignored, so you can walk out of it. Snapping to the far
+  // edge of a box you started inside is what used to fling people through
+  // walls and out of the building. A move is also refused outright if it
+  // would jump further than the step asked for.
   move(x, z, r, dx, dz) {
     const scratch = [];
+    const inside = b => Math.abs(x - b.x) < b.hw + r && Math.abs(z - b.z) < b.hd + r;
     let nx = x + dx;
     this.near(nx, z, r, scratch);
     for (const b of scratch) {
+      // already inside it: you may move out of it, never further in
+      if (inside(b)) { if ((dx > 0 && x < b.x) || (dx < 0 && x > b.x)) nx = x; continue; }
       if (Math.abs(nx - b.x) < b.hw + r && Math.abs(z - b.z) < b.hd + r) {
         nx = dx > 0 ? b.x - b.hw - r - 0.001 : b.x + b.hw + r + 0.001;
       }
     }
+    if (Math.abs(nx - x) > Math.abs(dx) + 0.01) nx = x;
     let nz = z + dz;
     this.near(nx, nz, r, scratch);
     for (const b of scratch) {
+      if (Math.abs(x - b.x) < b.hw + r && Math.abs(z - b.z) < b.hd + r) {
+        if ((dz > 0 && z < b.z) || (dz < 0 && z > b.z)) nz = z;
+        continue;
+      }
       if (Math.abs(nx - b.x) < b.hw + r && Math.abs(nz - b.z) < b.hd + r) {
         nz = dz > 0 ? b.z - b.hd - r - 0.001 : b.z + b.hd + r + 0.001;
       }
     }
+    if (Math.abs(nz - z) > Math.abs(dz) + 0.01) nz = z;
     return [nx, nz];
+  }
+
+  // Nearest spot within maxR that is free and in plain sight of (x, z) --
+  // for getting someone out of a box they should not be inside.
+  nearestFree(x, z, r, maxR = 2.4) {
+    if (this.free(x, z, r)) return [x, z];
+    for (let rad = 0.2; rad <= maxR; rad += 0.2) {
+      const n = Math.max(8, Math.round(rad * 14));
+      for (let i = 0; i < n; i++) {
+        const a = i / n * Math.PI * 2;
+        const tx = x + Math.sin(a) * rad, tz = z + Math.cos(a) * rad;
+        if (this.free(tx, tz, r) && this.wallsClear(x, z, tx, tz)) return [tx, tz];
+      }
+    }
+    return null;
+  }
+
+  // Like lineClear, but only walls and closed doors count (not furniture):
+  // "is there a wall between these two points".
+  wallsClear(x0, z0, x1, z1, step = 0.15) {
+    const dx = x1 - x0, dz = z1 - z0;
+    const len = Math.hypot(dx, dz);
+    const n = Math.max(1, Math.ceil(len / step));
+    const scratch = [];
+    for (let i = 1; i < n; i++) {
+      const t = i / n;
+      const px = x0 + dx * t, pz = z0 + dz * t;
+      this.near(px, pz, 0.02, scratch);
+      for (const b of scratch) {
+        if (b.prop || b.npc) continue;
+        if (Math.abs(px - b.x) < b.hw && Math.abs(pz - b.z) < b.hd) return false;
+      }
+    }
+    return true;
   }
 
   // Static-only version, used to work out which cells the AI may stand in.

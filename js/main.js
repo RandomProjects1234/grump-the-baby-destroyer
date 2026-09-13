@@ -1589,7 +1589,7 @@ class Game {
       if (p.hidden) p.exitHide(this);
       const n = p.dropAll(this);
       const lf = this.school.lostfound;
-      p.x = lf.cx; p.z = lf.cz;
+      [p.x, p.z] = this.freeSpotIn(lf, 0.3);
       p.fear = Math.min(100, p.fear + 30);
       this.ui.flash('spotted');
       this.ui.bigLine('LOST AND FOUND');

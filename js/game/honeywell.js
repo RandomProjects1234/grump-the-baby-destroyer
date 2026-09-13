@@ -51,7 +51,7 @@ export class Honeywell {
     this.darkCheckT = 2;
     this.place();
     // She is solid while she is there.
-    this.box = game.collider.addDynamic({ x: this.x, z: this.z, hw: 0.28, hd: 0.28, active: false });
+    this.box = game.collider.addDynamic({ x: this.x, z: this.z, hw: 0.28, hd: 0.28, active: false, npc: true });
   }
 
   // In front of the chalkboard, facing the class.

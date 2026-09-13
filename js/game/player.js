@@ -143,12 +143,19 @@ export class Player {
     if (p) {
       if (p.doorMesh) p.doorMesh.visible = false;
       game.sfx[p.hide === 'locker' ? 'lockerOpen' : 'clean']();
-      // step out to a free spot in front of the container
+      // Step out to a free spot: in front of the container if there is room,
+      // otherwise the nearest open floor on this side of the walls. Never stay
+      // inside the furniture itself.
       const fx = Math.sin(p.rot), fz = Math.cos(p.rot);
+      let spot = null;
       for (const d of [0.85, 1.2, 1.6]) {
         const tx = p.x + fx * d, tz = p.z + fz * d;
-        if (game.collider.free(tx, tz, RADIUS)) { this.x = tx; this.z = tz; break; }
+        if (game.collider.free(tx, tz, RADIUS) && game.collider.wallsClear(p.x, p.z, tx, tz)) { spot = [tx, tz]; break; }
       }
+      if (!spot) spot = game.collider.nearestFree(p.x + fx * (p.hd + 0.3), p.z + fz * (p.hd + 0.3), RADIUS, 2.4);
+      if (!spot) spot = game.collider.nearestFree(p.x, p.z, RADIUS, 3.5);
+      if (!spot) spot = game.freeSpotIn(game.school.rooms[p.room] || game.school.home, RADIUS);
+      this.x = spot[0]; this.z = spot[1];
       game.emitNoise(this.x, this.z, 0.3);
     }
   }
@@ -170,6 +177,23 @@ export class Player {
     if (this.downed) {
       this.downTimer -= dt;
       if (this.downTimer <= 0) { this.dead = true; game.onPlayerDead(); return; }
+    }
+
+    // Wedged inside something (a door that shut on you, a bad landing): ease
+    // out to the nearest open floor instead of being stuck or flung.
+    if (!this.hidden && !game.collider.free(this.x, this.z, RADIUS - 0.04)) {
+      const spot = game.collider.nearestFree(this.x, this.z, RADIUS, 1.6);
+      if (spot) { this.x = lerp(this.x, spot[0], Math.min(1, dt * 10)); this.z = lerp(this.z, spot[1], Math.min(1, dt * 10)); }
+    }
+    // Somehow outside the building (not the playground): back inside.
+    this.oobT = game.school.roomAt(this.x, this.z) ? 0 : (this.oobT || 0) + dt;
+    if (this.oobT > 0.5) {
+      const room = game.school.roomAt(this.lastGoodX, this.lastGoodZ) || game.school.home;
+      [this.x, this.z] = game.freeSpotIn(room, RADIUS);
+      this.oobT = 0;
+      game.ui.toast('You squeeze back inside.');
+    } else if (this.oobT === 0 && game.collider.free(this.x, this.z, RADIUS)) {
+      this.lastGoodX = this.x; this.lastGoodZ = this.z;
     }
 
     let moved = 0;
