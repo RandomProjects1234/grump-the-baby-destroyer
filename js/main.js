@@ -352,6 +352,8 @@ class Game {
       return;
     }
     if (this.player.dead) return;
+    // During a cutscene you can look at the map or the list, nothing else.
+    if (this.bullies && this.bullies.locksPlayer && k !== 'm' && k !== 'tab') return;
 
     if (k === 'e') { this.input.interact = true; e.preventDefault(); }
     else if (k === 'r') this.onSecondary();

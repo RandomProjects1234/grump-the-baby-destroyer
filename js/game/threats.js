@@ -293,6 +293,7 @@ export class Bob {
   }
 
   grab(t, game) {
+    if (t.busy) return;
     this.grabCd = 6;
     game.fx('bobGrab', this.x, this.z, { id: t.id });
     game.hitPlayer(t, 'bob');
@@ -689,6 +690,8 @@ export class Grump {
   }
 
   catchTarget(t, game) {
+    // A baby stuck in a teacher's minigame or a cutscene is off limits.
+    if (t.busy) return;
     this.grabCd = 8;
     game.fx('grumpCatch', this.x, this.z, { id: t.id });
     game.grumpCaught(t);

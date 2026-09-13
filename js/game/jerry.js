@@ -138,7 +138,7 @@ export class Jerry {
       g.score += 60;
       g.ui.toast('Gym class passed! You feel fit: stamina lasts longer for a while.');
       g.ui.subtitle(kind === 'dumbbells' ? 'Jerry: "W! You did it!"' : 'Jerry: "Now THAT is what I call hustle! Dismissed!"');
-      g.questEvent('gym');
+      g.questAction('gym');
     } else {
       p.food = Math.max(0, p.food - 8);
       g.ui.toast('Jerry is not impressed. All that effort made you hungry.');
@@ -179,7 +179,7 @@ export class Jerry {
         const d = dist2(this.x, this.z, p.x, p.z);
         if (Math.random() < dt * 0.6) g.sfx.tone(2700, 0.18, 'square', 0.05 * clamp(1 - d / 20, 0, 1), -120);
         // you hid, or he could not get to you: he gives up
-        if (p.hidden || p.dead || this.timer <= 0 || g.overlayOpen() || (g.bullies && g.bullies.active)) {
+        if (p.hidden || p.dead || this.timer <= 0 || g.overlayOpen() || (g.bullies && g.bullies.active) || g.cardKid.active) {
           this.state = 'leave'; this.timer = 10;
           this.goGym();
           if (p.hidden) g.ui.subtitle('Jerry: "I know you\'re in there! Next time, champ!"');
@@ -193,6 +193,8 @@ export class Jerry {
         break;
       }
       case 'class': {
+        // The game was cut short (you went down, a new run): he wanders off.
+        if (!g.minigames.active) { this.state = 'leave'; this.timer = 10; this.goGym(); break; }
         // stand there with the clipboard while you suffer
         this.yaw = approachAngle(this.yaw, Math.atan2(p.x - this.x, p.z - this.z), dt * 4);
         break;

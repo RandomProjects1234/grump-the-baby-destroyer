@@ -67,6 +67,10 @@ export class Meredith {
   // The interaction prompt for her.
   interaction() {
     if (this.serving) return null;
+    if (this.game.jerry && this.game.jerry.state === 'run') {
+      return { label: 'Meredith', hint: 'Jerry is coming for you. Lunch after gym.', hold: 0,
+        act: () => this.game.ui.subtitle('Meredith: "Better see what Jerry wants first, hon."') };
+    }
     if (this.game.phaseTime < 50) {
       return { label: 'Meredith', hint: 'She is packing up for the day.', hold: 0,
         act: () => this.game.ui.subtitle('Meredith: "Kitchen\'s closing, hon. Get yourself somewhere safe."') };
@@ -113,12 +117,14 @@ export class Meredith {
     g.sfx.pickup();
     g.ui.toast(`${tray.name}: ${tray.items.length} things to eat.` + (dropped.length ? ' Your bag was full -- some of it is on the floor.' : ''));
     g.score += Math.round(20 + r.score * 40);
-    g.questEvent('lunch');
+    g.questAction('lunch');
   }
 
   update(dt) {
     const g = this.game;
     if (!this.room) return;
+    // her game was cut short without finishing
+    if (this.serving && !g.minigames.active) this.serving = false;
     const shouldBeHere = g.phase === 'day' && (g.phaseTime > LEAVES_BEFORE_DARK || this.serving);
     if (this.present !== shouldBeHere) this.show(shouldBeHere);
     if (!this.present) return;

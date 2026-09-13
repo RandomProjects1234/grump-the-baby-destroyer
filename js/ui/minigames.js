@@ -83,6 +83,12 @@ export class Minigames {
     this.el.classList.add('hidden');
     this.game.player.busy = false;
     this.game.resumeFromOverlay();
+    // If Esc let go of the mouse during the game, re-locking needs a click:
+    // show the pause menu so there is a Resume button to click.
+    const g = this.game;
+    setTimeout(() => {
+      if (g.running && !g.locked && !g.paused && !g.overlayOpen() && !g.player.dead && !g.chatOpen) g.setPaused(true);
+    }, 400);
     const cb = this.onDone;
     this.onDone = null;
     if (cb) cb(r);

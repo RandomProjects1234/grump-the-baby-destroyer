@@ -127,7 +127,9 @@ export class Bullies {
     this.lineIdx = 0;
     this.hits = [false, false, false];
     this.state = 'play';
+    g.player.busy = true;
     g.player.torchOn = false;
+    if (g.jerry && g.jerry.state === 'run') g.jerry.hide();
     g.ui.setPrompt(null);
     g.ui.letterbox(true);
     g.ui.bigLine('THE BIG BOYS CLUB');
@@ -434,6 +436,7 @@ export class Bullies {
     const g = this.game;
     this.state = 'off';
     this.done = true;
+    g.player.busy = false;
     for (const k of this.kids) k.model.visible = false;
     this.grumpModel.visible = false;
     g.ui.letterbox(false);
