@@ -33,17 +33,33 @@ carry the other toddlers back to your classroom.
 **Night** (3 minutes) — you cannot leave. Your classroom is safe *only while
 the lights are on*.
 
-Repeat, five nights by default, with both threats getting worse.
+Repeat for 3, 5, 7, 10, 15 or 20 nights — or Endless — with both threats
+getting worse. From night 5 every night rolls a twist (a storm, Bob on overtime,
+the long night...), and from night 10 it rolls two.
 
 ### Day work
 
-| Job | Why |
+Every morning **Mrs. Honeywell's list** is waiting: three or four jobs (four
+from night 6) that send you out into the building. Each one you finish leaves a
+reward in the crib in your classroom.
+
+| Kind of job | Example |
 | --- | --- |
-| Search lockers, desks, bins, crates | Fuel and parts live in the boiler room and storage |
-| Pour fuel, fit parts | The generator powers every light in the building |
-| Clean up messes | Every mess still on the floor at dusk makes the generator drink faster |
-| Carry toddlers to your classroom | Any left out in the building do not survive the night |
-| Talk to Grump | Ignoring him all day costs *more* than talking to him |
+| Keep the power on | Pour 2 cans of fuel, fit a spare part |
+| Look after the little ones | Carry 2 toddlers home, feed a hungry one |
+| Chores | Clean up 3 messes, search 3 things in the library |
+| Explore | Check on the playground, switch the gym lights on |
+| Lost things | Find Mr. Wiggles the class hamster, return a shiny card to Lost & Found |
+| Grump's crayon | Give him back his crayon — the only thing that ever calms him (before day 4) |
+
+**You have to eat.** Your tummy empties over a day and a night; at zero you
+start losing health. Sandwiches, milk and apples live in the cafeteria, kitchen
+and staff room, and a few lunchboxes turn up around the school every morning
+(press R to open one).
+
+Between jobs: search containers, fuel the generator, clean up (messes left at
+dusk make the generator drink faster), and talk to Grump — ignoring him all day
+costs more than talking to him.
 
 ### Night
 
@@ -67,8 +83,19 @@ the only thing that ever takes the edge off.
 
 **On day 4 he stops asking questions**, and from then on he hunts you in
 daylight as well as in the dark. Being rude enough to max his resentment brings
-that forward; being polite does not push it back. The dialogue decides how bad
-he is when he turns, not whether he turns.
+that forward; being polite does not push it back.
+
+Once he has turned:
+
+- He **charges** the moment he has a clear look at you.
+- He **waits outside your hiding place**, breathing, and catches you if you come out too soon.
+- **Bulbs pop** when he walks under them, and the screen fills with static as he gets close.
+- He **arrives somewhere nearer** when you are not looking.
+- He **repeats your own answers back to you**.
+- If he catches you, you see his face.
+
+Before day 4 he never hurts you — but he knocks on your classroom door, and if
+the power dies he comes and stands very close.
 
 ## Controls
 
@@ -96,10 +123,21 @@ Up to four babies. **Host Co-op** gives you a five-letter room code; everyone
 else uses **Join Co-op**.
 
 The host runs the simulation — the phase clock, the generator, Bob, Grump, the
-toddlers and every loot roll — and mirrors it to the others. Clients own only
-their own movement, which keeps it responsive on a home connection. The host
-sends one number, the seed, and every client rebuilds a byte-identical school
-from it, down to which locker holds the wrench. Keep the host's tab open.
+toddlers, loot, quests — and mirrors it to the others. Clients own only their
+own movement. **Everything else a joiner does is sent to the host and applied
+there**: fuel, repairs, cleaning, feeding, dropped items, answers to Grump.
+Nothing a joiner does exists only on their own screen.
+
+- The school never pauses in co-op. Opening a menu does not stop anyone else.
+- Bob and Grump hurt whoever they actually catch.
+- If you die you spectate a living teammate (click to switch) — **including the
+  host**, whose game keeps simulating for everyone. The run ends only when
+  everyone is gone, or when anyone gets out the front door.
+- A downed teammate can be patted back up.
+
+The host sends one number, the seed, and every client rebuilds the same school
+from it; a player joining mid-game is sent the door, light, mess and quest state
+on top. Keep the host's tab open — it is the server.
 
 The boy with the Pokémon cards is deliberately a local encounter: everybody gets
 their own.
@@ -126,7 +164,8 @@ js/
     collide.js        AABB collision, nav blocking, connectivity repair
     nav.js            grid A* and the steering that follows it
     player.js         movement, stats, carrying, hiding
-    threats.js        Bob and Grump
+    threats.js        Bob and Grump: host-only AI + per-player presentation
+    quests.js         Mrs. Honeywell's list
     cardkid.js        the boy with the cards, and the thing that takes him
     toddlers.js       the children you are trying to keep
     systems.js        generator, messes, dropped items, portable lights
@@ -163,6 +202,11 @@ js/
 - **The day-4 turn lives in `Grump.checkSchedule()`** (`threats.js`), called at
   each dawn. `GRUMP_TURNS_ON_DAY` is the constant. Everything downstream asks
   `grump.turned`, never `resent >= 100`.
+- **Threats are split into `update()` and `present()`.** The AI runs on the
+  host only; animation, footsteps and ambience run on every machine from the
+  positions it sends. Voice lines and one-off effects go through `game.fx()`,
+  which plays them locally and broadcasts them, each player attenuating by
+  their own distance.
 - **A watchdog drives the loop** if `requestAnimationFrame` stalls, which it
   does in some embedded viewers and in background tabs. Without it the night
   clock can silently freeze.

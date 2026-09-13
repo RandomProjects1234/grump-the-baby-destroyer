@@ -21,6 +21,7 @@
 <!-- ============================================================ in-game HUD -->
 <div id="hud" class="hidden">
   <div id="vignette"></div>
+  <div id="static"></div>
   <div id="flash"></div>
   <div id="crosshair"></div>
 
@@ -30,6 +31,8 @@
   </div>
 
   <div id="objectives"></div>
+  <div id="quests"></div>
+  <div id="modline"></div>
 
   <div id="prompt" class="hidden">
     <div class="pkey">E</div>
@@ -65,7 +68,7 @@
     <div class="sub">Everyone got picked up. Except you.</div>
   </div>
   <div class="menubtns">
-    <button class="big" data-go="play">Survive Alone</button>
+    <button class="big" data-go="soloscreen">Survive Alone</button>
     <button data-go="hostscreen">Host Co-op</button>
     <button data-go="joinscreen">Join Co-op</button>
     <button data-go="howto">How to Survive</button>
@@ -74,12 +77,29 @@
   <div class="foot">A game about a baby, a generator, and a boy who is not a boy.</div>
 </div>
 
+<!-- ================================================================= solo -->
+<div id="soloscreen" class="screen hidden">
+  <h3>Survive Alone</h3>
+  <p class="lead">Just you, a generator, and whatever is walking the halls. Grump stops asking questions on day 4.</p>
+  <div class="row"><label>Nights to survive</label>
+    <select id="solo-nights"><option value="3">3</option><option value="5">5</option><option value="7" selected>7</option><option value="10">10</option><option value="15">15</option><option value="20">20</option><option value="0">Endless</option></select>
+  </div>
+  <div class="row"><label>Difficulty</label>
+    <select id="solo-diff">
+      <option value="gentle">Gentle</option>
+      <option value="normal" selected>Normal</option>
+      <option value="nasty">Nasty</option>
+    </select>
+  </div>
+  <div class="btnrow"><button id="solo-start" class="big">Start the day</button><button data-go="menu">Back</button></div>
+</div>
+
 <!-- ================================================================= host -->
 <div id="hostscreen" class="screen hidden">
   <h3>Host Co-op</h3>
   <p class="lead">Up to four babies. You run the school clock, so keep this tab open.</p>
   <div class="row"><label>Nights to survive</label>
-    <select id="host-nights"><option>3</option><option selected>5</option><option>7</option><option>10</option></select>
+    <select id="host-nights"><option value="3">3</option><option value="5">5</option><option value="7" selected>7</option><option value="10">10</option><option value="15">15</option><option value="20">20</option><option value="0">Endless</option></select>
   </div>
   <div class="row"><label>Difficulty</label>
     <select id="host-diff">
@@ -128,6 +148,8 @@
         <li><b>Feed the generator.</b> Fuel keeps it burning, parts keep it from stalling. It powers every light in the school.</li>
         <li><b>Clean up.</b> Every mess still on the floor at nightfall makes the generator drink faster.</li>
         <li><b>Carry the little ones home.</b> Toddlers left out in the building do not survive the night.</li>
+        <li><b>Eat.</b> Your tummy empties every day. Cafeterias, kitchens and lunchboxes are where the food is.</li>
+        <li><b>Do Mrs. Honeywell's list.</b> Every job you finish leaves a reward in the crib.</li>
       </ul>
     </div>
     <div>
@@ -156,7 +178,7 @@
         <tr><td>Shift</td><td>run (loud, tiring)</td></tr>
         <tr><td>Ctrl</td><td>crawl (quiet, slow)</td></tr>
         <tr><td>E / LMB</td><td>interact — hold for jobs</td></tr>
-        <tr><td>R</td><td>use selected item / second option</td></tr>
+        <tr><td>R</td><td>use selected item (eat, open lunchbox) / second option</td></tr>
         <tr><td>1–6</td><td>pick from the bag</td></tr>
         <tr><td>Q</td><td>put down what is in your hands</td></tr>
         <tr><td>F</td><td>torch</td></tr>
@@ -215,6 +237,7 @@
   <div class="pausebox">
     <h3>Paused</h3>
     <div id="pause-code" class="hidden"></div>
+    <div id="pause-coop" class="hidden">The school does not stop for anyone in co-op. You are still standing where you left yourself.</div>
     <div class="btnrow">
       <button id="pause-resume" class="big">Resume</button>
       <button data-go="settings" id="pause-settings">Settings</button>

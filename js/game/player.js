@@ -131,7 +131,9 @@ export class Player {
     this.crawling = prop.hide === 'under';
     game.sfx[prop.hide === 'locker' ? 'lockerShut' : 'clean']();
     if (prop.doorMesh) prop.doorMesh.visible = true;
-    game.emitNoise(this.x, this.z, 0.55);
+    // Quiet enough that a careful baby is not advertising where they went.
+    game.emitNoise(this.x, this.z, 0.18);
+    game.questAction('hide');
   }
 
   exitHide(game) {
@@ -147,7 +149,7 @@ export class Player {
         const tx = p.x + fx * d, tz = p.z + fz * d;
         if (game.collider.free(tx, tz, RADIUS)) { this.x = tx; this.z = tz; break; }
       }
-      game.emitNoise(this.x, this.z, 0.5);
+      game.emitNoise(this.x, this.z, 0.3);
     }
   }
 
@@ -221,12 +223,21 @@ export class Player {
     }
 
     // --- hunger
-    this.food = clamp(this.food - dt * 0.35, 0, 100);
-    if (this.food <= 0) this.health = clamp(this.health - dt * 1.4, 0, 100);
+    // Roughly one proper meal every day-and-night cycle.
+    this.food = clamp(this.food - dt * 0.25, 0, 100);
+    if (this.food <= 0) {
+      this.health = clamp(this.health - dt * 1.6, 0, 100);
+      if (this.health <= 0 && !this.downed) this.goDown(game, 'hunger');
+    }
+    if (this.food < 25 && !this._hungryWarned) {
+      this._hungryWarned = true;
+      game.ui.toast('Your tummy hurts. Find something to eat.');
+    }
+    if (this.food > 40) this._hungryWarned = false;
 
     // --- torch
     if (this.torchOn) {
-      this.torchBattery = clamp(this.torchBattery - dt * 2.6, 0, 100);
+      this.torchBattery = clamp(this.torchBattery - dt * 2.6 * (game.mods.cold ? 2 : 1), 0, 100);
       if (this.torchBattery <= 0) { this.torchOn = false; game.ui.toast('The torch dies.'); }
     }
 
@@ -263,7 +274,7 @@ export class Player {
       this.crySoon = 0.6;
     }
 
-    if (this.health < 100 && game.phase === 'day') this.health = clamp(this.health + dt * 0.9, 0, 100);
+    if (!this.downed && this.health < 100 && game.phase === 'day') this.health = clamp(this.health + dt * 0.9, 0, 100);
   }
 
   // Where the camera goes. Hiding pushes the eye inside the container and
@@ -299,7 +310,10 @@ export class Player {
       t: this.torchOn ? 1 : 0,
       hp: Math.round(this.health),
       it: this.hands && !this.carryingToddler ? this.hands : null,
-      tod: this.carryingToddler ? this.hands.toddler : null
+      tod: this.carryingToddler ? this.hands.toddler : null,
+      hid: this.hidden ? this.hidden.id : null,
+      tp: this.tapedIn > 0 ? 1 : 0,
+      dd: this.dead ? 1 : 0
     };
   }
 }

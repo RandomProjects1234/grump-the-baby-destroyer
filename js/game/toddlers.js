@@ -76,40 +76,34 @@ export class Toddlers {
     return true;
   }
 
-  // Dropping one inside the safe classroom counts as rescuing them.
-  place(t, x, z, game) {
+  // Dropping one inside the safe classroom counts as rescuing them. `local` is
+  // whether the player on this machine did it, which decides who gets thanked.
+  place(t, x, z, game, local = true) {
     t.x = x; t.z = z;
     t.model.visible = true;
     t.model.position.set(x, 0, z);
     const room = game.school.roomAt(x, z);
+    const wasSafe = t.state === 'safe';
     if (room === game.school.home) {
       t.state = 'safe';
       t.home = [x, z];
-      game.sfx.ding();
-      game.ui.toast(t.name + ' is safe in the classroom.');
-      game.player.stats.saved++;
-      game.score += 120;
+      if (!wasSafe) {
+        if (local) {
+          game.sfx.ding();
+          game.ui.toast(t.name + ' is safe in the classroom.');
+          game.player.stats.saved++;
+          game.score += 120;
+        }
+        if (game.isHost) game.questEvent('saved');
+      }
     } else {
       t.state = 'lost';
-      game.sfx.drop();
+      if (local) game.sfx.drop();
     }
   }
 
-  feed(t, game) {
-    t.hunger = 0;
-    t.cryT = 20;
-    game.sfx.eat();
-    game.ui.toast(t.name + ' stops crying.');
-    game.score += 15;
-  }
-
-  calmWithTeddy(t, game) {
-    t.calm = true;
-    t.hunger = Math.min(t.hunger, 40);
-    game.sfx.ding();
-    game.ui.toast(t.name + ' holds the teddy and goes quiet.');
-    game.score += 45;
-  }
+  feed(t) { t.hunger = 0; t.cryT = 20; }
+  calm(t) { t.calm = true; t.hunger = Math.min(t.hunger, 40); }
 
   // Grump collects whoever is still out in the building when it gets dark.
   takeOne(game) {
@@ -128,6 +122,15 @@ export class Toddlers {
       t.animT += dt;
       if (t.state === 'taken') continue;
 
+      // Only the host simulates them; everyone else draws what they are told.
+      if (!game.isHost) {
+        if (t.state !== 'carried') {
+          t.model.position.set(t.x, 0, t.z);
+          t.model.rotation.y = t.yaw + Math.PI;
+          animateWalk(t.model, t.animT, 0, { amp: 0.9 });
+        }
+        continue;
+      }
       if (t.state === 'carried') {
         // Ride on the carrier's shoulder.
         const carrier = game.carrierOf(t.id);
@@ -135,7 +138,7 @@ export class Toddlers {
         continue;
       }
 
-      t.hunger = clamp(t.hunger + dt * (t.calm ? 0.5 : 1.5), 0, 100);
+      t.hunger = clamp(t.hunger + dt * (t.calm ? 0.5 : 1.5) * (game.mods.hungry ? 2 : 1), 0, 100);
 
       if (t.state === 'lost') {
         // Wander a little during the day, freeze and whimper at night.
@@ -165,9 +168,8 @@ export class Toddlers {
         t.cryT -= dt;
         if (t.cryT <= 0) {
           t.cryT = t.state === 'safe' ? 9 : 6;
-          game.sfx.babyCry();
           game.emitNoise(t.x, t.z, t.state === 'safe' ? 0.5 : 0.9, 'toddler');
-          if (dist2(t.x, t.z, player.x, player.z) < 14) game.ui.subtitle(t.name + ' is crying.');
+          game.fx('cry', t.x, t.z, { name: t.name });
         }
       }
 

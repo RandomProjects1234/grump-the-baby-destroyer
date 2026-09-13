@@ -127,7 +127,7 @@ export class Renderer {
       const f = e.f;
       l.visible = true;
       l.position.set(f.x, f.y - 0.1, f.z);
-      const flick = f.flicker > 0 ? (Math.random() < 0.35 ? 0.15 : 1) : 1;
+      const flick = (f.flicker > 0 || f.jit) ? (Math.random() < 0.35 ? 0.15 : 1) : 1;
       l.intensity = (f.pole ? 6.5 : 4.2) * flick;
       l.distance = f.pole ? 20 : 13;
       l.color.setHex(f.pole ? 0xd8e4ff : 0xfff2d4);

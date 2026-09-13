@@ -336,3 +336,46 @@ table.keys td:first-child {
   #chatlog { width: 180px; }
   .slot { width: 42px; height: 42px; font-size: 17px; }
 }
+
+/* ============================================================ quests & dread */
+
+#quests {
+  position: absolute; left: 18px; top: 66px; width: 270px;
+  background: rgba(8, 11, 9, .62); border: 1px solid var(--edge);
+  border-radius: 12px; padding: 10px 12px; font-size: 12.5px; line-height: 1.5; color: #d8d2c2;
+}
+#quests:empty { display: none; }
+#quests h5 { margin: 0 0 6px; font-size: 10.5px; letter-spacing: .2em; color: var(--amber); font-weight: 700; text-transform: uppercase; }
+#quests .q { display: grid; grid-template-columns: 16px 1fr; column-gap: 8px; align-items: center; margin: 4px 0; }
+#quests .qbox {
+  width: 14px; height: 14px; border: 1.5px solid rgba(230, 200, 120, .6); border-radius: 3px;
+  font-size: 11px; line-height: 12px; text-align: center; color: #9fd07a;
+}
+#quests .qt em { font-style: normal; color: var(--amber); font-variant-numeric: tabular-nums; }
+#quests .qbar { grid-column: 2; height: 3px; background: rgba(255,255,255,.08); border-radius: 2px; overflow: hidden; margin-top: 2px; }
+#quests .qbar i { display: block; height: 100%; background: var(--amber); }
+#quests .q.done { color: #7a8470; }
+#quests .q.done .qt { text-decoration: line-through; }
+#quests .q.done .qbox { border-color: #6f8f5a; }
+#chatlog { top: auto; bottom: 170px; }
+
+#modline {
+  position: absolute; top: 58px; left: 50%; transform: translateX(-50%);
+  font-size: 11px; letter-spacing: .24em; color: #b8a0e0; text-transform: uppercase;
+  text-shadow: 0 1px 6px #000;
+}
+
+/* Static that thickens as Grump gets close. Noise tile is generated in ui.js. */
+#static {
+  position: absolute; inset: 0; opacity: 0; pointer-events: none;
+  mix-blend-mode: screen; background-size: 256px 256px;
+  animation: staticjump .12s steps(1) infinite;
+}
+@keyframes staticjump {
+  0% { background-position: 0 0; } 25% { background-position: -83px 41px; }
+  50% { background-position: 57px -112px; } 75% { background-position: -140px -29px; }
+}
+#hud.turned #vignette { background: radial-gradient(ellipse at center, transparent 38%, rgba(40,0,0,.88) 100%); }
+
+#pause-coop { color: var(--dim); font-size: 13px; margin: -4px 0 12px; font-style: italic; }
+.dawnbox .quests-done { text-align: left; font-size: 13px; color: #c9c3b4; margin: -8px 0 16px; line-height: 1.7; }

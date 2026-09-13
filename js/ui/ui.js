@@ -3,6 +3,22 @@ import { ITEMS, itemName } from '../game/items.js';
 import { fmtTime, clamp } from '../util/util.js';
 
 const $ = s => document.querySelector(s);
+const SCREENS = ['menu', 'soloscreen', 'hostscreen', 'joinscreen', 'settings', 'howto'];
+
+// A tile of grey noise for the static overlay, generated once.
+function makeStaticTile() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const g = c.getContext('2d');
+  const img = g.createImageData(256, 256);
+  for (let i = 0; i < img.data.length; i += 4) {
+    const v = Math.random() * 255;
+    img.data[i] = v; img.data[i + 1] = v * 0.9; img.data[i + 2] = v * 0.9;
+    img.data[i + 3] = Math.random() < 0.5 ? 255 : 0;
+  }
+  g.putImageData(img, 0, 0);
+  return c.toDataURL();
+}
 
 export class UI {
   constructor(game) {
@@ -30,8 +46,12 @@ export class UI {
       dawn: $('#dawn'), dawnTitle: $('#dawn-title'), dawnLines: $('#dawn-lines'), dawnKicker: $('#dawn-kicker'),
       over: $('#over'), overTitle: $('#over-title'), overSub: $('#over-sub'), overStats: $('#over-stats'),
       pause: $('#pause'), pauseCode: $('#pause-code'),
-      loading: $('#loading'), loadText: $('#loadtext')
+      loading: $('#loading'), loadText: $('#loadtext'),
+      quests: $('#quests'), modline: $('#modline'), static: $('#static'),
+      pauseCoop: $('#pause-coop')
     };
+    this.el.static.style.backgroundImage = `url(${makeStaticTile()})`;
+    this.questHtml = '';
     this.subT = 0;
     this.slots = [];
     this.buildHotbar();
@@ -40,13 +60,13 @@ export class UI {
 
   // ---------------------------------------------------------------- screens
   screen(name) {
-    for (const id of ['menu', 'hostscreen', 'joinscreen', 'settings', 'howto']) {
+    for (const id of SCREENS) {
       $('#' + id).classList.toggle('hidden', id !== name);
     }
     this.lastScreen = name;
   }
   hideScreens() {
-    for (const id of ['menu', 'hostscreen', 'joinscreen', 'settings', 'howto']) $('#' + id).classList.add('hidden');
+    for (const id of SCREENS) $('#' + id).classList.add('hidden');
   }
   showHud(on) { this.el.hud.classList.toggle('hidden', !on); }
   loading(on, text) {
@@ -193,6 +213,17 @@ export class UI {
     // fear tightens the vignette
     const fearV = 0.5 + (p.fear / 100) * 0.42;
     this.el.vignette.style.opacity = p.hidden ? '' : String(fearV);
+
+    // Grump's static, and the red edge once he has turned.
+    const dread = game.grump ? (game.grump.dread || 0) : 0;
+    this.el.static.style.opacity = String(Math.min(0.55, dread * dread * 0.6));
+    this.el.hud.classList.toggle('turned', !!(game.grump && game.grump.turned && dread > 0.25));
+
+    // Quest list only re-renders when it changes.
+    const qh = game.quests ? game.quests.html() : '';
+    if (qh !== this.questHtml) { this.questHtml = qh; this.el.quests.innerHTML = qh; }
+    const ml = game.modText || '';
+    if (this.el.modline.textContent !== ml) this.el.modline.textContent = ml;
   }
 
   setObjectives(show, html) {
@@ -247,6 +278,7 @@ export class UI {
 
   showDawn(title, kicker, lines) {
     this.el.dawn.classList.remove('hidden');
+    document.exitPointerLock();
     this.el.dawnTitle.textContent = title;
     this.el.dawnKicker.textContent = kicker;
     this.el.dawnLines.innerHTML = lines.map(l =>
@@ -264,6 +296,7 @@ export class UI {
 
   showPause(on, code) {
     this.el.pause.classList.toggle('hidden', !on);
+    this.el.pauseCoop.classList.toggle('hidden', !code);
     this.el.pauseCode.classList.toggle('hidden', !code);
     if (code) this.el.pauseCode.innerHTML = `Room code <b style="color:var(--amber);letter-spacing:6px">${code}</b>`;
   }

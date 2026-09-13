@@ -223,7 +223,7 @@ export class CardKid {
     p.shake = 1.2;
     // Watching it happen is worth remembering, and Grump notices that you did
     // nothing -- because there was nothing to do.
-    game.grump.anger(3, game, 'witness');
+    if (game.isHost) game.grump.anger(3, game, 'witness');
     game.score += 25;
     game.seenTaking = (game.seenTaking || 0) + 1;
   }

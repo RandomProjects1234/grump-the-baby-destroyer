@@ -21,11 +21,39 @@ export const ITEMS = {
     desc: 'Torch juice. Also runs a night light.'
   },
   snack: {
-    name: 'Snack', icon: '🍪', color: '#e5a83a',
+    name: 'Snack', icon: '🍪', color: '#e5a83a', food: 30,
     desc: 'Eat it, or give it to a crying toddler.'
   },
+  apple: {
+    name: 'Apple', icon: '🍎', color: '#c4342a', food: 22,
+    desc: 'Somebody left it for the teacher. The teacher is not coming.'
+  },
+  sandwich: {
+    name: 'Sandwich', icon: '🥪', color: '#d8b46a', food: 55,
+    desc: 'Squashed, but it counts. The best food in the building.'
+  },
+  milk: {
+    name: 'Milk Carton', icon: '🥛', color: '#e8eef2', food: 28, stamina: 35,
+    desc: 'Still cold. Good for your legs as well as your tummy.'
+  },
+  lunchbox: {
+    name: 'Lunchbox', icon: '🍱', color: '#3b7dc4',
+    desc: 'Open it (R). Somebody packed it this morning.'
+  },
+  hamster: {
+    name: 'Mr. Wiggles', big: true, icon: '🐹', color: '#c89060', quest: true,
+    desc: 'The class hamster. He wants to go back to his classroom.'
+  },
+  crayon: {
+    name: 'Green Crayon', icon: '🖍', color: '#4a9a3a', quest: true,
+    desc: 'It is worn down to a stub. Grump says this is his.'
+  },
+  holocard: {
+    name: 'Shiny Card', icon: '🃏', color: '#c8a8f0', quest: true,
+    desc: 'A holographic card, bent at one corner. The boy dropped it.'
+  },
   juice: {
-    name: 'Juice Box', icon: '🧃', color: '#e57fa0',
+    name: 'Juice Box', icon: '🧃', color: '#e57fa0', food: 10, stamina: 100,
     desc: 'Restores the wobble in your legs.'
   },
   teddy: {
@@ -59,15 +87,16 @@ export const ITEMS = {
 };
 
 export const isBig = k => !!(ITEMS[k] && ITEMS[k].big);
+export const isFood = k => !!(ITEMS[k] && ITEMS[k].food);
 export const itemName = k => (ITEMS[k] ? ITEMS[k].name : k);
 
 // ---------------------------------------------------------------- loot
 
 // [kind, weight]. Rolled once per search; `empty` weight means nothing found.
 const TABLES = {
-  locker: [['snack', 5], ['battery', 3], ['drawing', 2], ['glowstick', 2], ['juice', 3], ['tape', 2], ['empty', 9]],
-  desk: [['snack', 4], ['drawing', 3], ['glowstick', 1], ['battery', 1], ['empty', 11]],
-  teacher: [['key', 4], ['battery', 3], ['tape', 2], ['snack', 2], ['flashlight', 2], ['empty', 6]],
+  locker: [['snack', 3], ['lunchbox', 2], ['battery', 3], ['drawing', 2], ['glowstick', 2], ['juice', 2], ['tape', 2], ['empty', 10]],
+  desk: [['snack', 2], ['apple', 3], ['drawing', 3], ['glowstick', 1], ['battery', 1], ['empty', 11]],
+  teacher: [['key', 4], ['battery', 3], ['tape', 2], ['apple', 3], ['flashlight', 2], ['empty', 6]],
   cabinet: [['part', 4], ['battery', 3], ['tape', 3], ['nightlight', 2], ['empty', 7]],
   bin: [['drawing', 2], ['part', 1], ['snack', 1], ['empty', 13]],
   toy: [['teddy', 5], ['glowstick', 3], ['drawing', 2], ['snack', 2], ['empty', 6]],
@@ -75,21 +104,21 @@ const TABLES = {
   art: [['tape', 4], ['drawing', 3], ['glowstick', 3], ['part', 2], ['empty', 7]],
   music: [['drawing', 3], ['battery', 2], ['snack', 2], ['empty', 10]],
   gym: [['juice', 4], ['snack', 3], ['tape', 2], ['empty', 8]],
-  cafe: [['snack', 6], ['juice', 5], ['drawing', 1], ['empty', 7]],
+  cafe: [['sandwich', 3], ['milk', 4], ['snack', 3], ['juice', 3], ['drawing', 1], ['empty', 8]],
   vending: [['snack', 7], ['juice', 6], ['empty', 5]],
-  kitchen: [['snack', 6], ['juice', 4], ['part', 2], ['key', 1], ['empty', 6]],
+  kitchen: [['sandwich', 4], ['milk', 4], ['apple', 3], ['part', 2], ['key', 1], ['empty', 7]],
   boiler: [['fuel', 6], ['part', 6], ['wrench', 3], ['battery', 2], ['empty', 4]],
   storage: [['fuel', 5], ['part', 5], ['battery', 3], ['nightlight', 3], ['tape', 2], ['empty', 5]],
   nurse: [['snack', 4], ['juice', 4], ['teddy', 2], ['battery', 2], ['empty', 6]],
-  lost: [['teddy', 5], ['glowstick', 3], ['key', 2], ['drawing', 3], ['snack', 2], ['empty', 6]],
-  staff: [['key', 4], ['flashlight', 3], ['battery', 3], ['snack', 3], ['juice', 2], ['empty', 6]],
+  lost: [['teddy', 5], ['glowstick', 3], ['key', 2], ['drawing', 3], ['lunchbox', 3], ['empty', 6]],
+  staff: [['key', 4], ['flashlight', 3], ['battery', 3], ['sandwich', 3], ['milk', 2], ['empty', 6]],
   sand: [['glowstick', 2], ['drawing', 2], ['part', 1], ['empty', 12]]
 };
 
 // Later nights are leaner: the easy pickings are gone.
 export function rollLoot(kind, rng, night) {
   const table = TABLES[kind] || TABLES.desk;
-  const scarcity = 1 + Math.max(0, night - 1) * 0.35;
+  const scarcity = 1 + Math.min(7, Math.max(0, night - 1)) * 0.32;
   let total = 0;
   const rows = table.map(([k, w]) => {
     const weight = k === 'empty' ? w * scarcity : w;
@@ -102,6 +131,14 @@ export function rollLoot(kind, rng, night) {
     if (roll <= 0) return k === 'empty' ? null : k;
   }
   return null;
+}
+
+export function lunchboxContents(rng) {
+  const pool = ['sandwich', 'apple', 'milk', 'snack', 'juice'];
+  const n = rng() < 0.4 ? 3 : 2;
+  const out = [];
+  for (let i = 0; i < n; i++) out.push(pool[Math.floor(rng() * pool.length) % pool.length]);
+  return out;
 }
 
 // How long a container takes to rummage through.
@@ -138,6 +175,26 @@ export const DRAWINGS = [
   {
     title: 'The Rule',
     text: 'Just words, pressed so hard the crayon tore through: THERE IS NO RIGHT ANSWER. THAT IS THE ANSWER.'
+  },
+  {
+    title: 'The Card Boy',
+    text: 'A boy holding a fan of cards, every one of them coloured in with care. Behind him, very tall and very thin and drawn without a face, something is bending down. The boy is smiling. He has not noticed yet.'
+  },
+  {
+    title: "Bob's Keys",
+    text: 'A ring of keys, drawn one by one, each with a room written on it. One key is coloured black and labelled BOB DOES NOT HAVE THIS ONE.'
+  },
+  {
+    title: 'Day Four',
+    text: 'A calendar. Days one, two and three have smiley faces on them. Day four has been scribbled over so hard the paper is shiny with wax.'
+  },
+  {
+    title: 'The Lunch Queue',
+    text: 'The cafeteria, full of children with trays. At the very back of the queue, taller than the dinner ladies, a green shape waits with an empty tray. The caption says: HE IS ALWAYS HUNGRY AND HE DOES NOT EAT FOOD.'
+  },
+  {
+    title: 'Mrs. Honeywell',
+    text: 'A teacher with a big smile and a long list in her hand. The list goes off the edge of the page. Underneath: SHE LEFT US JOBS SO WE WOULD STAY BUSY. STAYING BUSY IS HOW YOU STAY ALIVE.'
   },
   {
     title: 'Room 101',

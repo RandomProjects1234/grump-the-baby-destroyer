@@ -437,6 +437,50 @@ const ITEM_BUILDERS = {
     g.add(part(box(0.10, 0.05, 0.025), mat(0x9aa0a4), 0, 0.24, 0));
     g.add(part(box(0.09, 0.045, 0.025), mat(0x9aa0a4), 0, 0.02, 0));
   },
+  apple(g) {
+    g.add(part(sphere(0.07, 8), mat(0xc4342a), 0, 0.07, 0));
+    g.add(part(cyl(0.006, 0.006, 0.04, 4), mat(0x4a3220), 0, 0.15, 0));
+    g.add(part(box(0.04, 0.012, 0.02), mat(0x4a9a3a), 0.02, 0.15, 0));
+  },
+  sandwich(g) {
+    g.add(part(box(0.16, 0.025, 0.16), mat(0xe8d2a0), 0, 0.02, 0));
+    g.add(part(box(0.17, 0.02, 0.17), mat(0x6aa04a), 0, 0.045, 0));
+    g.add(part(box(0.16, 0.025, 0.16), mat(0xe8d2a0), 0, 0.07, 0));
+  },
+  milk(g) {
+    g.add(part(box(0.08, 0.14, 0.08), mat(0xf2f2ee), 0, 0.07, 0));
+    g.add(part(box(0.08, 0.04, 0.08), mat(0x3b7dc4), 0, 0.16, 0));
+  },
+  lunchbox(g) {
+    g.add(part(box(0.24, 0.14, 0.12), mat(0x3b7dc4), 0, 0.07, 0));
+    g.add(part(box(0.1, 0.03, 0.03), mat(0x2a2a2a), 0, 0.16, 0));
+    g.add(part(box(0.14, 0.06, 0.005), mat(0xf0d84a), 0, 0.08, -0.062));
+  },
+  hamster(g) {
+    // a wire cage with a small orange occupant
+    g.add(part(box(0.3, 0.02, 0.2), mat(0x3a8a4a), 0, 0.01, 0));
+    for (const x of [-0.14, 0.14]) for (const z of [-0.09, 0.09])
+      g.add(part(cyl(0.006, 0.006, 0.2, 4), mat(0xc8c8c8), x, 0.11, z));
+    g.add(part(box(0.3, 0.02, 0.2), mat(0xc8c8c8), 0, 0.21, 0));
+    const body = part(sphere(0.055, 8), mat(0xd89050), 0, 0.06, 0);
+    body.scale.set(1.3, 0.9, 1);
+    g.add(body);
+    g.add(part(sphere(0.012, 5), mat(0x111111), -0.06, 0.08, -0.03));
+  },
+  crayon(g) {
+    const c = part(cyl(0.012, 0.012, 0.09, 6), mat(0x3a9a2a), 0, 0.02, 0);
+    c.rotation.z = Math.PI / 2;
+    g.add(c);
+    const tip = part(cyl(0.001, 0.012, 0.025, 6), mat(0x2a7a1a), 0.057, 0.02, 0);
+    tip.rotation.z = -Math.PI / 2;
+    g.add(tip);
+  },
+  holocard(g) {
+    const c = part(box(0.11, 0.004, 0.16), emissive(0xd8b8ff), 0, 0.01, 0);
+    c.rotation.y = 0.3;
+    g.add(c);
+    g.add(part(box(0.09, 0.006, 0.07), mat(0xf0d84a), 0, 0.012, -0.02));
+  },
   drawing(g) {
     const m = part(box(0.20, 0.26, 0.004), mat(0xf2eee0), 0, 0.13, 0);
     g.add(m);

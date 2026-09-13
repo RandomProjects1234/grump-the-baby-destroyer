@@ -1,7 +1,7 @@
 // Finds whatever the player is looking at and turns it into a prompt plus an
 // action. Anything that takes effort is a hold, so the player is committed and
 // vulnerable while they do it.
-import { ITEMS, SEARCH_TIME, isBig, itemName } from './items.js';
+import { ITEMS, SEARCH_TIME, isBig, isFood, itemName } from './items.js';
 import { dist2 } from '../util/util.js';
 
 const REACH = 2.5;
@@ -60,8 +60,9 @@ export function findInteraction(game) {
   for (const t of game.toddlers.list) {
     if (t.state === 'carried' || t.state === 'taken') continue;
     consider(t.x, t.z, () => {
-      if (p.hands === 'teddy') return { label: `Give the teddy to ${t.name}`, hold: 0.8, act: () => { p.hands = null; game.toddlers.calmWithTeddy(t, game); } };
-      if (t.hunger > 40 && p.hasItem('snack')) return { label: `Feed ${t.name}`, hold: 0.7, act: () => { p.take('snack'); game.toddlers.feed(t, game); } };
+      if (p.hands === 'teddy') return { label: `Give the teddy to ${t.name}`, hold: 0.8, act: () => game.teddyToddler(t) };
+      const food = p.bag.find(k => isFood(k));
+      if (t.hunger > 40 && food) return { label: `Feed ${t.name} your ${itemName(food).toLowerCase()}`, hint: 'Hungry toddlers cry, and crying carries.', hold: 0.7, act: () => game.feedToddler(t, food) };
       if (p.handsFree) return { label: `Pick up ${t.name}`, hint: t.hunger > 65 ? 'Hungry.' : 'Carry them to your classroom.', hold: 0.45, act: () => game.carryToddler(t) };
       return { label: `${t.name} (hands full)`, hold: 0, act: () => game.sfx.deny() };
     });
@@ -85,7 +86,7 @@ export function findInteraction(game) {
       label: `Clean up ${mess.label}`,
       hint: 'Mess left at nightfall burns extra fuel.',
       hold: mess.time,
-      act: () => game.messes.clean(mess, game)
+      act: () => game.cleanMess(mess)
     }));
   }
 
@@ -93,12 +94,12 @@ export function findInteraction(game) {
   const gen = game.generator;
   if (gen && dist2(p.x, p.z, gen.x, gen.z) < 2.6) {
     consider(gen.x, gen.z, () => {
-      if (p.hands === 'fuel') return { label: 'Pour in the fuel', hold: 2.2, act: () => { p.hands = null; gen.refuel(game); } };
+      if (p.hands === 'fuel') return { label: 'Pour in the fuel', hold: 2.2, act: () => { p.hands = null; game.genAction('refuel'); } };
       if (p.hasItem('part')) {
         const fast = p.hasItem('wrench');
-        return { label: fast ? 'Repair (wrench)' : 'Repair', hint: `Condition ${Math.round(gen.condition)}%`, hold: fast ? 1.3 : 2.6, act: () => { p.take('part'); gen.repair(game); } };
+        return { label: fast ? 'Repair (wrench)' : 'Repair', hint: `Condition ${Math.round(gen.condition)}%`, hold: fast ? 1.3 : 2.6, act: () => { p.take('part'); game.genAction('repair'); } };
       }
-      if (!gen.running) return { label: 'Pull the starter cord', hint: `Fuel ${Math.round(gen.fuel)}% · Condition ${Math.round(gen.condition)}%`, hold: 1.1, act: () => gen.start(game) };
+      if (!gen.running) return { label: 'Pull the starter cord', hint: `Fuel ${Math.round(gen.fuel)}% · Condition ${Math.round(gen.condition)}%`, hold: 1.1, act: () => game.genAction('start') };
       return { label: 'The generator is running', hint: `Fuel ${Math.round(gen.fuel)}% · ${game.fuelTimeLeft()}`, hold: 0, act: () => game.sfx.click() };
     });
   }
@@ -122,7 +123,7 @@ export function findInteraction(game) {
   // --- light switches
   for (const sw of game.switches) {
     consider(sw.x, sw.z, () => {
-      const on = game.roomLit(sw.room) > 0.5;
+      const on = sw.room.lightsOn !== false;
       if (!game.generator.running) return { label: 'The switch clicks. Nothing.', hint: 'No power.', hold: 0, act: () => { game.sfx.click(); game.sfx.deny(); } };
       return { label: on ? `Lights off · ${sw.room.name}` : `Lights on · ${sw.room.name}`, hold: 0, act: () => game.setRoomLights(sw.room, !on, 'player') };
     });
@@ -146,7 +147,13 @@ export function findInteraction(game) {
     if (dist2(p.x, p.z, ax, az) > REACH) continue;
     consider(ax, az, () => {
       if (prop.crib) {
-        return { label: 'The crib', hint: `${game.toddlers.saved} little ones safe here.`, hold: 0, act: () => game.sfx.babble() };
+        if (p.hands === 'hamster') {
+          return { label: 'Put Mr. Wiggles back', hint: 'He is very pleased to be home.', hold: 0.8, act: () => game.questDeliver('hamster') };
+        }
+        return { label: 'The crib', hint: `${game.toddlers.saved} little ones safe here. Quest rewards turn up here too.`, hold: 0, act: () => game.sfx.babble() };
+      }
+      if (prop.search === 'lost' && p.hasItem('holocard')) {
+        return { label: 'Leave the shiny card in Lost & Found', hint: 'Somebody might come back for it.', hold: 0.8, act: () => game.questDeliver('holocard') };
       }
       if (prop.search && !prop.searched) {
         return {
@@ -175,6 +182,9 @@ export function findInteraction(game) {
     consider(g.x, g.z, () => {
       if (g.hunting || g.turned) {
         return { label: 'Grump', hint: 'He has finished asking.', hold: 0, act: () => game.tryTalkToGrump() };
+      }
+      if (p.hasItem('crayon')) {
+        return { label: 'Give Grump back his crayon', hint: 'The only kind thing you can do for him.', hold: 0.6, act: () => game.questDeliver('crayon') };
       }
       if (g.talkCd > 0) return { label: 'Grump is thinking', hint: 'Give him a moment.', hold: 0, act: () => game.sfx.deny() };
       return {
@@ -214,13 +224,11 @@ export function useSelected(game) {
   const p = game.player;
   const kind = p.selectedItem;
   if (!kind) { game.sfx.deny(); return; }
+  if (isFood(kind)) { game.eat(kind); return; }
   switch (kind) {
-    case 'snack':
-      p.take('snack'); p.food = Math.min(100, p.food + 42); p.fear = Math.max(0, p.fear - 6);
-      game.sfx.eat(); game.ui.toast('Nom.'); break;
-    case 'juice':
-      p.take('juice'); p.stamina = 100; p.fear = Math.max(0, p.fear - 10);
-      game.sfx.eat(); game.ui.toast('Juice. Legs work again.'); break;
+    case 'lunchbox':
+      game.openLunchbox();
+      break;
     case 'battery':
       p.take('battery'); p.torchBattery = Math.min(100, p.torchBattery + 58);
       game.sfx.click(); game.ui.toast('Torch charged.'); break;

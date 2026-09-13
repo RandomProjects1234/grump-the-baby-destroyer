@@ -1,24 +1,36 @@
 // Grump the Baby Destroyer -- entry point, game loop, and the glue that owns
 // every subsystem.
+//
+// Co-op authority model, which everything below is organised around:
+//   * The HOST owns the world: phase clock, generator, Bob, Grump, toddlers,
+//     messes, loot, ground items, quests. It simulates all of it, always --
+//     including while its own player has the pause menu open.
+//   * A CLIENT owns only its own body. Anything it does to the world is sent to
+//     the host as an `act`; the host applies it and the result comes back in a
+//     snapshot or event. Nothing a client does is allowed to exist only on the
+//     client's own screen.
+//   * Anything that should be SEEN or HEARD goes through fx(), which plays it
+//     locally and on every client, attenuated by each player's own position.
 import * as THREE from 'three';
 import { Renderer } from './render/renderer.js';
 import { initTextures } from './render/textures.js';
 import { buildSchool, materialFor, resetMaterials } from './world/build.js';
-import { generateSchool, CELL } from './world/schoolgen.js';
+import { generateSchool } from './world/schoolgen.js';
 import { buildCollider, computeNavBlocking, repairConnectivity } from './game/collide.js';
 import { Nav } from './game/nav.js';
 import { Player } from './game/player.js';
-import { Bob, Grump, LIT } from './game/threats.js';
+import { Bob, Grump } from './game/threats.js';
 import { Toddlers } from './game/toddlers.js';
 import { Generator, Messes, GroundItems, PortableLights } from './game/systems.js';
 import { findInteraction, useSelected, dropHands } from './game/interact.js';
 import { CardKid } from './game/cardkid.js';
-import { rollLoot, DRAWINGS, ITEMS, itemName, isBig } from './game/items.js';
+import { Quests } from './game/quests.js';
+import { rollLoot, DRAWINGS, ITEMS, itemName, isBig, lunchboxContents } from './game/items.js';
 import { pickQuestion } from './game/dialogue.js';
-import { makeBaby, animateWalk, BABY_COLORS, OUTFIT_COLORS } from './render/models.js';
+import { makeBaby, makeGrump, setGrumpStage, animateWalk, BABY_COLORS, OUTFIT_COLORS } from './render/models.js';
 import { Sfx } from './audio/sfx.js';
 import { UI } from './ui/ui.js';
-import { Net, makeCode } from './net/net.js';
+import { Net } from './net/net.js';
 import { clamp, lerp, dist2, makeRng, hashStr, fmtTime } from './util/util.js';
 
 const SET_KEY = 'grump.settings.v1';
@@ -30,31 +42,82 @@ const DIFF = {
   nasty: { day: 205, night: 215, anger: 15, bobFrom: 1 }
 };
 
+// From night 5 each night rolls a twist; from night 10, two.
+const NIGHT_MODS = [
+  { id: 'storm', name: 'Storm', desc: 'Thunder outside. The lights stutter and the generator wears twice as fast.' },
+  { id: 'overtime', name: 'Overtime', desc: 'Bob is on a double shift. He is faster, and he hears everything.' },
+  { id: 'hungry', name: 'Hungry night', desc: 'The little ones get hungry twice as fast.' },
+  { id: 'long', name: 'The long night', desc: 'This night lasts longer than the others.' },
+  { id: 'closer', name: 'He is closer', desc: 'Grump starts the night outside your classroom.' },
+  { id: 'cold', name: 'Cold night', desc: 'Your torch battery drains twice as fast.' }
+];
+
+// Client actions the host accepts for quest progress on trust.
+const CLIENT_QUEST_EVENTS = new Set(['eat', 'hide', 'drawing']);
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
 // ---------------------------------------------------------------- remote peer
+
+function makeNameTag(name) {
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 64;
+  const g = c.getContext('2d');
+  g.font = 'bold 30px Inter, system-ui, sans-serif';
+  g.textAlign = 'center';
+  g.fillStyle = 'rgba(0,0,0,0.55)';
+  const w = Math.min(250, g.measureText(name).width + 28);
+  g.fillRect(128 - w / 2, 12, w, 42);
+  g.fillStyle = '#efe9dc';
+  g.fillText(name, 128, 44);
+  const tex = new THREE.CanvasTexture(c);
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+  sprite.scale.set(0.9, 0.225, 1);
+  sprite.renderOrder = 10;
+  return sprite;
+}
 
 class RemotePlayer {
   constructor(game, id, name, idx) {
-    this.id = id; this.name = name || 'Baby';
+    this.game = game;
+    this.id = id;
+    this.name = name || 'Baby';
     this.x = 0; this.z = 0; this.yaw = 0;
-    this.crawling = false; this.hidden = false; this.downed = false;
-    this.torch = false; this.health = 100; this.dead = false;
+    this.crawling = false; this.hidden = false; this.downed = false; this.dead = false;
+    this.torch = false; this.health = 100;
+    this.hiddenPropId = null; this.taped = false; this.carrying = null;
     this.model = makeBaby(BABY_COLORS[idx % BABY_COLORS.length], OUTFIT_COLORS[idx % OUTFIT_COLORS.length]);
+    this.setName(this.name);
     this.animT = 0; this.speed = 0;
     this.lastX = 0; this.lastZ = 0;
     game.renderer.scene.add(this.model);
   }
+  setName(name) {
+    if (this.tag && this.tagName === name) return;
+    if (this.tag) this.model.remove(this.tag);
+    this.tagName = name;
+    this.tag = makeNameTag(name);
+    this.tag.position.y = 1.0;
+    this.model.add(this.tag);
+  }
   apply(s) {
-    this.lastX = this.x; this.lastZ = this.z;
     this.x = s.x; this.z = s.z; this.yaw = s.yaw;
     this.crawling = !!s.c; this.hidden = !!s.h; this.downed = !!s.d;
     this.torch = !!s.t; this.health = s.hp;
+    this.hiddenPropId = s.hid === undefined ? null : s.hid;
+    this.taped = !!s.tp;
+    this.dead = !!s.dd;
+    if (s.tod !== undefined) this.carrying = s.tod;
+    if (s.n) { this.name = s.n; this.setName(s.n); }
   }
   update(dt) {
     this.animT += dt;
     const moved = Math.hypot(this.x - this.lastX, this.z - this.lastZ);
-    this.speed = lerp(this.speed, moved / Math.max(dt, 0.001), 0.25);
+    this.speed = lerp(this.speed, moved > 3 ? 0 : moved / Math.max(dt, 0.001), 0.25);
     this.lastX = this.x; this.lastZ = this.z;
-    this.model.visible = !this.hidden;
+    this.model.visible = !this.hidden && !this.dead;
     this.model.position.set(this.x, this.downed ? -0.18 : 0, this.z);
     this.model.rotation.y = this.yaw + Math.PI;
     this.model.rotation.x = this.downed ? -1.2 : 0;
@@ -86,25 +149,29 @@ class Game {
     this.fusebox = null;
     this.running = false;
     this.paused = false;
-    this.state = 'menu';
     this.score = 0;
     this.night = 1;
     this.phase = 'day';
     this.phaseTime = 0;
+    this.time = 0;
     this.escapeOpen = false;
     this.drawingsFound = 0;
     this.talkedToday = false;
     this.noiseEvents = [];
-    this.brightCache = { t: -1, v: 0 };
+    this.mods = {};
+    this.modText = '';
     this.snapT = 0;
     this.posT = 0;
+    this.visitT = 0;
+    this.deadCheckT = 0;
     this.lastStep = performance.now();
-    this.input = {
-      fwd: 0, right: 0, sprint: false, crawl: false, peek: false,
-      lookX: 0, lookY: 0, interact: false, secondary: false
-    };
+    this.input = { fwd: 0, right: 0, sprint: false, crawl: false, peek: false, lookX: 0, lookY: 0, interact: false };
     this.holdT = 0;
+    this.holdLabel = null;
+    this.needRelease = false;
     this.lastInteraction = null;
+    this.pendingTakes = new Map();
+    this.jumpT = 0;
 
     this.bindUi();
     this.bindInput();
@@ -115,7 +182,6 @@ class Game {
   }
 
   async loadVoices() {
-    // Fire and forget: if the clips fail, Grump falls back to synth noises.
     try {
       await this.sfx.loadVoices({
         greeting: 'audio/grump-greeting.ogg',
@@ -130,6 +196,9 @@ class Game {
   }
 
   get isHost() { return !this.net.online || this.net.isHost; }
+  get online() { return this.net.online; }
+  // The id the host's AI uses for the player on THIS machine.
+  get myTargetId() { return this.isHost ? this.player.id : this.net.myId; }
 
   // ================================================================= setup
 
@@ -138,14 +207,17 @@ class Game {
       b.onclick = () => {
         this.sfx.resume(); this.sfx.click();
         const go = b.dataset.go;
-        if (go === 'play') this.startGame({ solo: true });
-        else if (go === 'settings' && this.running) { this.ui.showPause(false); this.ui.screen('settings'); this.fromPause = true; }
-        else if (go === 'menu' && this.fromPause) { this.fromPause = false; this.ui.hideScreens(); this.ui.showPause(true, this.net.code); }
+        if (go === 'settings' && this.running) { this.ui.showPause(false); this.ui.screen('settings'); this.fromPause = true; }
+        else if (go === 'menu' && this.fromPause) { this.fromPause = false; this.ui.hideScreens(); this.ui.showPause(true, this.online ? this.net.code : null); }
         else this.ui.screen(go);
       };
     });
 
-    // --- settings
+    $('#solo-start').onclick = () => {
+      this.sfx.resume();
+      this.startGame({ nights: parseInt($('#solo-nights').value, 10), diff: $('#solo-diff').value });
+    };
+
     const s = this.settings;
     const bind = (id, key, fmt, apply) => {
       const el = $('#set-' + id), val = $('#val-' + id);
@@ -165,23 +237,30 @@ class Game {
     bind('quality', 'quality', null, v => this.renderer.setQuality(v));
     bind('invert', 'invert');
 
-    // --- host / join
     $('#host-name').value = s.name || '';
     $('#join-name').value = s.name || '';
-    $('#host-start').onclick = () => this.doHost();
+    this.resetLobbyButtons();
     $('#join-go').onclick = () => this.doJoin();
     $('#copycode').onclick = () => {
       navigator.clipboard.writeText(this.net.code || '').then(() => this.ui.toast('Copied.'));
     };
     $('#join-code').oninput = e => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); };
 
-    // --- overlays
     $('#draw-close').onclick = () => { this.ui.closeDrawing(); this.resumeFromOverlay(); };
     $('#dawn-go').onclick = () => { this.ui.closeDawn(); this.resumeFromOverlay(); };
-    $('#over-again').onclick = () => { this.ui.closeOver(); this.startGame(this.lastOpts); };
+    $('#over-again').onclick = () => { this.ui.closeOver(); this.startGame(Object.assign({}, this.lastOpts, { seed: undefined })); };
     $('#over-menu').onclick = () => { this.ui.closeOver(); this.quitToMenu(); };
     $('#pause-resume').onclick = () => this.setPaused(false);
     $('#pause-quit').onclick = () => { this.ui.showPause(false); this.quitToMenu(); };
+  }
+
+  resetLobbyButtons() {
+    const hs = $('#host-start');
+    hs.disabled = false;
+    hs.textContent = 'Open the room';
+    hs.onclick = () => this.doHost();
+    $('#hostcode').classList.add('hidden');
+    $('#join-go').disabled = false;
   }
 
   bindInput() {
@@ -194,7 +273,7 @@ class Game {
     });
     document.addEventListener('pointerlockchange', () => {
       this.locked = document.pointerLockElement === canvas;
-      if (!this.locked && this.running && !this.overlayOpen() && !this.paused) this.setPaused(true);
+      if (!this.locked && this.running && !this.overlayOpen() && !this.paused && !this.chatOpen) this.setPaused(true);
     });
     document.addEventListener('mousemove', e => {
       if (!this.locked) return;
@@ -203,7 +282,7 @@ class Game {
     });
     document.addEventListener('mousedown', e => {
       if (!this.locked) return;
-      if (e.button === 0) this.input.interact = true;
+      if (e.button === 0) { this.input.interact = true; this.clickQueued = true; }
       if (e.button === 2) this.input.peek = true;
     });
     document.addEventListener('mouseup', e => {
@@ -216,7 +295,7 @@ class Game {
     document.addEventListener('keydown', e => {
       if (e.target.tagName === 'INPUT') {
         if (e.key === 'Enter') this.sendChat();
-        if (e.key === 'Escape') this.ui.openChat(false);
+        if (e.key === 'Escape') { this.chatOpen = false; this.ui.openChat(false); }
         return;
       }
       const k = e.key.toLowerCase();
@@ -230,7 +309,7 @@ class Game {
       if (k === 'e') this.input.interact = false;
       if (k === 'tab') this.ui.setObjectives(false);
     });
-    window.addEventListener('blur', () => { keys.clear(); this.input.fwd = this.input.right = 0; });
+    window.addEventListener('blur', () => { keys.clear(); this.input.interact = false; });
   }
 
   onKeyDown(k, e) {
@@ -241,7 +320,6 @@ class Game {
     }
     if (!this.running || this.paused) return;
 
-    // dialogue answers by number
     if (this.dialogueOpen && '123'.includes(k)) {
       const b = this.ui.dlgButtons && this.ui.dlgButtons[parseInt(k, 10) - 1];
       if (b && !b.disabled) b.click();
@@ -254,18 +332,17 @@ class Game {
       }
       return;
     }
+    if (this.player.dead) return;
 
     if (k === 'e') { this.input.interact = true; e.preventDefault(); }
     else if (k === 'r') this.onSecondary();
     else if (k === 'q') dropHands(this);
     else if (k === 'f') this.toggleTorch();
     else if (k === 'tab') { this.ui.setObjectives(true, this.objectivesHtml()); e.preventDefault(); }
-    else if (k === 't' && this.net.online) { this.ui.openChat(true); document.exitPointerLock(); }
+    else if (k === 't' && this.online) { this.chatOpen = true; this.ui.openChat(true); document.exitPointerLock(); }
     else if (k >= '1' && k <= '6') this.player.selected = parseInt(k, 10) - 1;
   }
 
-  // Pointer lock rejects in some embedded contexts; that is not an error worth
-  // surfacing, the game just stays in click-to-look mode.
   lockPointer() {
     const r = $('#game').requestPointerLock();
     if (r && typeof r.catch === 'function') r.catch(() => {});
@@ -280,7 +357,7 @@ class Game {
 
   setPaused(on) {
     this.paused = on;
-    this.ui.showPause(on, this.net.online ? this.net.code : null);
+    this.ui.showPause(on, this.online ? this.net.code : null);
     if (!on) this.lockPointer();
   }
 
@@ -288,7 +365,7 @@ class Game {
     if (this.running && !this.paused) this.lockPointer();
   }
 
-  // ================================================================= start
+  // ================================================================= lobby
 
   doHost() {
     const name = ($('#host-name').value || 'Baby').slice(0, 12);
@@ -310,8 +387,7 @@ class Game {
       this.ui.toast('Room open. Share the code, then start.');
     }, err => {
       $('#host-err').textContent = err;
-      $('#host-start').disabled = false;
-      $('#host-start').textContent = 'Open the room';
+      this.resetLobbyButtons();
     });
   }
 
@@ -335,19 +411,20 @@ class Game {
     });
   }
 
+  // ================================================================= start
+
   startGame(opts = {}) {
     this.lastOpts = opts;
-    const diff = DIFF[opts.diff || 'normal'] || DIFF.normal;
-    this.diff = diff;
-    this.diffName = opts.diff || 'normal';
-    this.requiredNights = opts.nights || 5;
+    this.diff = DIFF[opts.diff] || DIFF.normal;
+    this.diffName = DIFF[opts.diff] ? opts.diff : 'normal';
+    // 0 means endless.
+    this.requiredNights = opts.nights === undefined || isNaN(opts.nights) ? 7 : opts.nights;
     this.myName = opts.name || this.settings.name || 'Baby';
     this.seed = opts.seed !== undefined ? opts.seed : (Math.random() * 0xffffffff) >>> 0;
+    this.running = false;      // ignore snapshots until the school exists
 
     this.ui.loading(true, 'Unlocking the school…');
     this.ui.hideScreens();
-    // Any leftover overlay would block update() entirely -- the game would run
-    // its render loop and simulate nothing at all.
     this.ui.closeOver();
     this.ui.closeDawn();
     this.ui.closeDrawing();
@@ -356,29 +433,34 @@ class Game {
     this.dialogueOpen = false;
     this.paused = false;
 
-    // Build on the next frame so the loading card actually paints.
     setTimeout(() => {
       this.buildWorld(this.seed);
       this.night = opts.night || 1;
       this.phase = 'day';
-      this.phaseTime = diff.day;
+      this.phaseTime = this.diff.day;
       this.score = 0;
+      this.time = 0;
       this.escapeOpen = false;
       this.drawingsFound = 0;
-      this.state = 'play';
-      this.running = true;
-      this.paused = false;
-      this.ui.loading(false);
-      this.ui.showHud(true);
+      this.mods = {};
+      this.modText = '';
+      this.askedQs = new Set();
+      $('#over-again').classList.toggle('hidden', this.online);
 
       if (this.isHost) {
         this.beginDay(true);
-        if (this.net.online) this.broadcastWorld();
+        if (this.online) this.net.broadcast(this.worldMessage());
+      } else if (this.pendingWorld) {
+        this.applyWorldState(this.pendingWorld);
+        this.pendingWorld = null;
       }
+      this.running = true;
+      this.ui.loading(false);
+      this.ui.showHud(true);
       this.lockPointer();
       this.sfx.resume();
-      this.ui.bigLine('DAY 1');
-      this.ui.toast('Everyone went home. Find the boiler room.');
+      this.ui.bigLine((this.phase === 'night' ? 'NIGHT ' : 'DAY ') + this.night);
+      if (this.night === 1) this.ui.toast('Everyone went home. Check Mrs. Honeywell\'s list.');
     }, 60);
   }
 
@@ -388,15 +470,15 @@ class Game {
     if (this.messes) this.messes.clear();
     if (this.groundItems) this.groundItems.clearAll();
     if (this.portableLights) this.portableLights.clearAll();
+    for (const sw of this.switches) this.renderer.scene.remove(sw.mesh);
     for (const rp of this.remotePlayers.values()) this.renderer.scene.remove(rp.model);
     if (this.bob) this.renderer.scene.remove(this.bob.model);
     if (this.grump) this.renderer.scene.remove(this.grump.model);
     if (this.cardKid) this.cardKid.dispose();
+    if (this.jumpModel) { this.renderer.scene.remove(this.jumpModel); this.jumpModel = null; }
     resetMaterials();
 
     this.school = generateSchool(seed);
-    // Work out what is standable, prune any furniture that seals off a pocket,
-    // and only then build the geometry -- so removed props are never drawn.
     this.collider = buildCollider(this.school);
     computeNavBlocking(this.school, this.collider);
     if (repairConnectivity(this.school)) {
@@ -405,39 +487,39 @@ class Game {
     }
     this.built = buildSchool(this.school, this.renderer.scene);
     this.nav = new Nav(this.school);
+    this.propById = new Map(this.school.props.map(p => [p.id, p]));
 
     this.toddlers = new Toddlers(this);
     this.messes = new Messes(this);
     this.groundItems = new GroundItems(this);
     this.portableLights = new PortableLights(this);
+    this.quests = new Quests(this);
 
-    const genProp = this.school.props.find(p => p.generator);
-    this.generator = new Generator(this, genProp);
+    this.generator = new Generator(this, this.school.props.find(p => p.generator));
     this.fusebox = this.school.props.find(p => p.fusebox) || null;
+    this.crib = this.school.props.find(p => p.crib) || null;
 
     this.grump = new Grump(this);
     this.bob = new Bob(this);
     this.cardKid = new CardKid(this);
-
     this.buildSwitches();
 
-    // Player starts in their own classroom, which is the one room they can trust.
+    // Rebuilding the scene must not lose anyone already in the room -- this is
+    // what made joiners invisible to the host.
+    for (const rp of this.remotePlayers.values()) this.renderer.scene.add(rp.model);
+
     const home = this.school.home;
     this.player = new Player(this);
     this.player.x = home.cx; this.player.z = home.cz;
-    this.player.yaw = 0;
     this.player.give('flashlight');
     this.player.torchBattery = 60;
 
-    // The school is closed, so most of it starts dark. Deciding which rooms are
-    // worth the fuel is the whole light-management game.
     for (const r of this.school.rooms) {
       r.lightsOn = r === home || r.type === 'hall' || r.type === 'boiler';
     }
     this.applyPower();
   }
 
-  // A light switch on the wall beside each room's first door.
   buildSwitches() {
     this.switches = [];
     const geo = new THREE.BoxGeometry(0.14, 0.2, 0.05);
@@ -450,10 +532,7 @@ class Game {
     };
     for (const r of this.school.rooms) {
       if (r.outdoor) continue;
-      if (r.type === 'hall') {
-        place(r.cx, this.school.wz(r.y0) + 0.36, r);
-        continue;
-      }
+      if (r.type === 'hall') { place(r.cx, this.school.wz(r.y0) + 0.36, r); continue; }
       const d = this.school.doors.find(dd => r.doors.includes(dd.id));
       if (!d) { place(r.cx, r.cz, r); continue; }
       const insideB = d.b === r.id;
@@ -464,12 +543,17 @@ class Game {
 
   quitToMenu() {
     this.running = false;
-    this.state = 'menu';
     this.net.close();
+    for (const rp of this.remotePlayers.values()) this.renderer.scene.remove(rp.model);
     this.remotePlayers.clear();
     this.sfx.setGenerator(false, 0);
     this.sfx.setDrone(0);
+    this.sfx.stopVoice();
+    this.ui.closeOver(); this.ui.closeDawn(); this.ui.closeDrawing(); this.ui.closeDialogue();
+    this.ui.showPause(false);
+    this.ui.loading(false);
     this.ui.showHud(false);
+    this.resetLobbyButtons();
     this.ui.screen('menu');
     document.exitPointerLock();
   }
@@ -480,43 +564,82 @@ class Game {
     this.phase = 'day';
     this.phaseTime = this.diff.day;
     this.talkedToday = false;
-    // Day 4 is when he stops asking. If the player has already pushed him that
-    // far, it simply happens sooner.
+    this.mods = {};
+    this.modText = '';
+    this.bob.hearMult = 1;
+    this.bob.speedBonus = 0;
+
     const justTurned = this.grump.checkSchedule(this.night);
     this.grump.beginDay(this);
     if (justTurned) {
-      this.ui.bigLine('GRUMP THE BABY DESTROYER');
-      this.sfx.grumpReveal();
-      this.sfx.voice('angry');
-      this.ui.toast('He is not asking questions any more. He is in the building with you.');
+      this.fx('big', 0, 0, { text: 'GRUMP THE BABY DESTROYER', reveal: true });
+      this.fx('toast', 0, 0, { text: 'He is not asking questions any more. He is in the building with you.' });
     }
-    if (this.cardKid) this.cardKid.resetPhase();
+    this.cardKid.resetPhase();
     this.bob.deactivate();
     this.messes.spawnForDay(this.night, this.seed);
     this.toddlers.spawnForDay(this.night, this.seed);
     for (const p of this.school.props) { p.searched = false; p.checked = false; }
-    // Seed a few useful things where a desperate baby will actually look.
+
     if (first) {
       this.spawnGroundItem('fuel', this.school.boiler.cx + 1.4, this.school.boiler.cz + 1.0);
       this.spawnGroundItem('part', this.school.boiler.cx - 1.4, this.school.boiler.cz - 0.8);
     }
+    this.spawnLunchboxes();
+
+    const spec = this.quests.plan(this.night, this.seed);
+    this.quests.load(spec, this.night);
+    this.quests.spawnItems();
+
     this.sfx.phaseDay();
     this.sfx.setDrone(0);
     this.applyPower();
-    this.netEvent({ k: 'phase', phase: 'day', night: this.night });
+    this.netEvent({
+      k: 'phase', phase: 'day', night: this.night, quests: spec, eo: this.escapeOpen,
+      dawn: this.pendingDawn || null
+    });
+    this.pendingDawn = null;
+  }
+
+  // Food does not only live in lockers: a few lunchboxes turn up every morning.
+  spawnLunchboxes() {
+    const s = this.school;
+    const rooms = s.rooms.filter(r => ['cafeteria', 'library', 'gym', 'classroom', 'yard', 'music', 'art'].includes(r.type));
+    const n = 2 + (this.night % 2);
+    for (let i = 0; i < n; i++) {
+      const r = rooms[(Math.random() * rooms.length) | 0];
+      for (let k = 0; k < 10; k++) {
+        const x = r.cx + (Math.random() - 0.5) * (r.w - 1.2) * s.CELL;
+        const z = r.cz + (Math.random() - 0.5) * (r.h - 1.2) * s.CELL;
+        if (this.collider.free(x, z, 0.3)) { this.spawnGroundItem('lunchbox', x, z); break; }
+      }
+    }
+  }
+
+  pickMods(night) {
+    if (night < 5) return [];
+    const rng = makeRng(hashStr(this.seed + ':mods:' + night));
+    const pool = rng.shuffle(NIGHT_MODS.map(m => m.id));
+    return pool.slice(0, night >= 10 ? 2 : 1);
+  }
+
+  applyMods(ids) {
+    this.mods = {};
+    for (const id of ids || []) this.mods[id] = true;
+    this.modText = (ids || []).map(id => NIGHT_MODS.find(m => m.id === id).name).join(' · ');
+    this.bob.hearMult = this.mods.overtime ? 1.6 : 1;
+    this.bob.speedBonus = this.mods.overtime ? 0.45 : 0;
   }
 
   beginNight() {
     this.phase = 'night';
     this.phaseTime = this.diff.night;
 
-    // Everything you did not do today is charged at the door.
     let anger = this.diff.anger;
     if (!this.talkedToday) anger += 6;
     anger += this.messes.remaining * 0.8;
-    this.grump.anger(anger, this, 'nightfall');
+    if (!this.grump.turned) this.grump.anger(anger, this, 'nightfall');
 
-    // Whoever is still out in the building does not stay out there alone.
     const takenNames = [];
     const outCount = this.toddlers.lost;
     for (let i = 0; i < outCount; i++) {
@@ -524,20 +647,27 @@ class Game {
       if (t) takenNames.push(t.name);
     }
     if (takenNames.length) {
-      this.grump.anger(-2 * takenNames.length, this, 'fed');
-      this.ui.bigLine(takenNames.join(' and ') + '\nis not here any more');
-      this.sfx.stinger();
+      this.fx('big', 0, 0, { text: takenNames.join(' and ') + '\nis not here any more', stinger: true });
     }
 
-    for (const d of this.school.doors) if (d.yard) { d.locked = true; this.toggleDoor(d, false); }
+    for (const d of this.school.doors) if (d.yard) { d.locked = true; this.toggleDoor(d, false, true); }
+
+    const modIds = this.pickMods(this.night);
+    this.applyMods(modIds);
+    if (this.mods.long) this.phaseTime += 50;
+
     if (this.night >= this.diff.bobFrom) this.bob.activate(this.night);
-    this.grump.beginNight(this);
-    if (this.cardKid) this.cardKid.resetPhase();
+    this.grump.beginNight(this, !!this.mods.closer);
+    this.cardKid.resetPhase();
     this.sfx.phaseNight();
     this.sfx.setDrone(0.5);
     this.ui.bigLine('NIGHT ' + this.night);
-    this.ui.toast('Get to your classroom. Keep the lights on.');
-    this.netEvent({ k: 'phase', phase: 'night', night: this.night });
+    if (modIds.length) {
+      for (const id of modIds) this.ui.toast(NIGHT_MODS.find(m => m.id === id).desc);
+    } else {
+      this.ui.toast('Get to your classroom. Keep the lights on.');
+    }
+    this.netEvent({ k: 'phase', phase: 'night', night: this.night, mods: modIds, pt: this.phaseTime });
   }
 
   endNight() {
@@ -548,33 +678,39 @@ class Game {
     const lines = [];
     lines.push([`Night ${survivedNight} survived.`, 'good']);
     lines.push([`Little ones safe: ${this.toddlers.saved}`, this.toddlers.saved ? 'good' : '']);
+    const qDone = this.quests.list.filter(q => q.done).length;
+    lines.push([`Mrs. Honeywell's list: ${qDone} of ${this.quests.list.length} done`, qDone === this.quests.list.length ? 'good' : '']);
     lines.push([`Generator: ${Math.round(this.generator.fuel)}% fuel, ${Math.round(this.generator.condition)}% condition`,
       this.generator.fuel < 25 ? 'bad' : '']);
-    lines.push([`Grump: ${this.grumpMood()}`, this.grump.resent >= 75 ? 'bad' : '']);
-    lines.push([`Score: ${Math.round(this.score)}`, '']);
+    lines.push([`Grump: ${this.grumpMood()}`, this.grump.turned ? 'bad' : '']);
+    if (!this.grump.turned) {
+      const left = 4 - (survivedNight + 1);
+      if (left <= 0) lines.push(['Today he stops asking.', 'bad']);
+    }
 
     this.score += 200 + this.toddlers.saved * 60;
     this.night++;
 
-    if (this.night > this.requiredNights && !this.escapeOpen) {
+    let title = `Day ${this.night}.`, kicker = 'THE SUN COMES UP';
+    if (this.requiredNights > 0 && this.night > this.requiredNights && !this.escapeOpen) {
       this.escapeOpen = true;
       for (const d of this.school.exitDoors) d.locked = false;
-      lines.push(['The chains on the front doors are gone.', 'good']);
-      this.ui.showDawn('The front doors are open.', 'YOU MADE IT', lines);
+      lines.push(['The chains on the front doors are gone. Leave, or stay for the score.', 'good']);
+      title = 'The front doors are open.';
+      kicker = 'YOU MADE IT';
       this.sfx.win();
     } else {
-      this.ui.showDawn(`Day ${this.night}.`, 'THE SUN COMES UP', lines);
       this.sfx.phaseDay();
     }
-    document.exitPointerLock();
+    this.ui.showDawn(title, kicker, lines);
+    this.pendingDawn = { title, kicker, lines };
     this.beginDay(false);
   }
 
   grumpMood() {
     const r = this.grump.resent;
-    if (this.grump.turned) return 'finished asking';
-    return r >= 100 ? 'finished asking' : r >= 75 ? 'not speaking to you'
-      : r >= 50 ? 'cold' : r >= 22 ? 'keeping score' : 'friendly, apparently';
+    if (this.grump.turned) return 'hunting you';
+    return r >= 75 ? 'not speaking to you' : r >= 50 ? 'cold' : r >= 22 ? 'keeping score' : 'friendly, apparently';
   }
 
   // ================================================================= loop
@@ -585,8 +721,7 @@ class Game {
   }
 
   // Some embedded viewers -- and any backgrounded tab -- stall
-  // requestAnimationFrame entirely. A slow watchdog keeps the night clock
-  // running so the game can never silently freeze mid-night.
+  // requestAnimationFrame entirely. A slow watchdog keeps the clock running.
   startWatchdog() {
     setInterval(() => {
       if (performance.now() - this.lastStep > 220) this.step();
@@ -599,79 +734,127 @@ class Game {
     this.lastStep = now;
     if (!this.running) { this.renderer.render(); return; }
 
-    if (!this.paused && !this.overlayOpen()) this.update(dt);
+    const blocked = this.paused || this.overlayOpen();
+    // Solo pauses the world. Co-op never does: the school keeps going for
+    // everyone else while one player has a menu open.
+    if (!blocked) this.update(dt, false);
+    else if (this.online) this.update(dt, true);
     else { this.input.fwd = 0; this.input.right = 0; }
 
-    this.player.applyCamera(this.renderer.camera, dt);
+    if (this.player.dead && this.online) this.spectateCamera(dt);
+    else this.player.applyCamera(this.renderer.camera, dt);
+    this.updateJumpscare(dt);
+    this.updateLightJitter(dt);
     this.renderer.updateLights(this.school.fixtures, this.renderer.camera.position);
     this.updateTorches();
     this.renderer.render();
   }
 
-  update(dt) {
-    // --- input axes
+  update(dt, blocked) {
+    this.time += dt;
     const k = this.keys;
-    this.input.fwd = (k.has('w') || k.has('arrowup') ? 1 : 0) - (k.has('s') || k.has('arrowdown') ? 1 : 0);
-    this.input.right = (k.has('d') || k.has('arrowright') ? 1 : 0) - (k.has('a') || k.has('arrowleft') ? 1 : 0);
-    this.input.sprint = k.has('shift');
-    this.input.crawl = k.has('control');
+    if (blocked || this.chatOpen || this.player.dead) {
+      this.input.fwd = 0; this.input.right = 0;
+      this.input.sprint = false; this.input.crawl = false;
+      this.input.lookX = 0; this.input.lookY = 0;
+      this.input.interact = false;
+    } else {
+      this.input.fwd = (k.has('w') || k.has('arrowup') ? 1 : 0) - (k.has('s') || k.has('arrowdown') ? 1 : 0);
+      this.input.right = (k.has('d') || k.has('arrowright') ? 1 : 0) - (k.has('a') || k.has('arrowleft') ? 1 : 0);
+      this.input.sprint = k.has('shift');
+      this.input.crawl = k.has('control');
+    }
 
     // --- phase clock (host owns it)
     if (this.isHost) {
+      const before = this.phaseTime;
       this.phaseTime -= dt;
+      if (this.phase === 'day' && before > 30 && this.phaseTime <= 30) {
+        this.fx('big', 0, 0, { text: 'IT IS GETTING DARK', stinger: true });
+      }
       if (this.phaseTime <= 0) {
         if (this.phase === 'day') this.beginNight();
         else this.endNight();
       }
-      if (this.phase === 'day' && Math.abs(this.phaseTime - 30) < dt) {
-        this.ui.bigLine('IT IS GETTING DARK');
-        this.sfx.stinger();
-      }
     }
 
     this.player.update(dt, this.input, this);
-    this.handleInteraction(dt);
+    if (!blocked) this.handleInteraction(dt);
+    else this.ui.setPrompt(null);
 
     if (this.isHost) {
       this.generator.update(dt, this);
       this.grump.update(dt, this);
       this.bob.update(dt, this);
-      this.toddlers.update(dt, this);
+      this.tickBrokenLights(dt);
+      this.hostChecks(dt);
       this.flushNoise();
-    } else {
-      this.toddlers.update(dt, this);
     }
+    this.toddlers.update(dt, this);
+    this.grump.present(dt, this);
+    this.bob.present(dt, this);
     this.cardKid.update(dt, this);
-
     this.groundItems.update(dt);
     this.portableLights.update(dt);
     for (const rp of this.remotePlayers.values()) rp.update(dt);
     this.animateDoors(dt);
+
+    if (this.mods.storm && Math.random() < dt * 0.05) {
+      this.sfx.thunder();
+      this.stormFlashT = 0.6;
+    }
 
     // --- mood
     const lightHere = this.roomBrightness(this.player.x, this.player.z);
     const daylight = this.phase === 'day'
       ? clamp(0.35 + this.phaseTime / this.diff.day * 0.65, 0.3, 1)
       : 0.02;
-    this.renderer.setMood(daylight, this.generator.running, this.player.fear / 100);
-    this.sfx.updateHeartbeat(dt, this.player.fear / 100);
-    if (this.phase === 'night') {
-      this.sfx.setDrone(0.35 + (1 - lightHere) * 0.45 + this.threatPressure(this.player.x, this.player.z) * 0.5);
+    this.renderer.setMood(daylight, this.generator.running, Math.max(this.player.fear / 100, this.grump.dread || 0));
+    this.sfx.updateHeartbeat(dt, Math.max(this.player.fear / 100, (this.grump.dread || 0) * 0.9));
+    if (this.phase === 'night' || this.grump.turned) {
+      this.sfx.setDrone(0.25 + (1 - lightHere) * 0.4 + this.threatPressure(this.player.x, this.player.z) * 0.5);
     }
 
     this.ui.update(dt, this);
     if (this.keys.has('tab')) this.ui.setObjectives(true, this.objectivesHtml());
 
     // --- networking
-    if (this.net.online) {
-      this.posT -= dt;
-      if (this.posT <= 0) {
-        this.posT = 0.075;
-        if (!this.isHost) this.net.send({ t: 'pos', s: this.player.serialize() });
-      }
-      if (this.isHost) {
+    if (this.online) {
+      if (!this.isHost) {
+        this.posT -= dt;
+        if (this.posT <= 0) {
+          this.posT = 0.075;
+          // Our noise rides along with our position, strongest first.
+          const nz = this.noiseEvents.sort((a, b) => b.level - a.level).slice(0, 6)
+            .map(n => [+n.x.toFixed(1), +n.z.toFixed(1), +n.level.toFixed(2)]);
+          this.noiseEvents.length = 0;
+          this.net.send({ t: 'pos', s: Object.assign({ n: this.myName }, this.player.serialize()), nz });
+        }
+      } else {
         this.snapT -= dt;
         if (this.snapT <= 0) { this.snapT = 0.085; this.sendSnapshot(); }
+      }
+    } else if (!this.isHost) {
+      this.noiseEvents.length = 0;
+    }
+  }
+
+  // Host-side periodic checks: quest visits and whether everyone is gone.
+  hostChecks(dt) {
+    this.visitT -= dt;
+    if (this.visitT <= 0) {
+      this.visitT = 0.5;
+      for (const t of this.threatTargets()) {
+        const r = this.school.roomAt(t.x, t.z);
+        if (r) this.questEvent('visit', { room: r.type });
+      }
+    }
+    if (this.online) {
+      this.deadCheckT -= dt;
+      if (this.deadCheckT <= 0) {
+        this.deadCheckT = 1;
+        const everyone = [this.player, ...this.remotePlayers.values()];
+        if (everyone.every(p => p.dead)) this.gameOverAll();
       }
     }
   }
@@ -679,9 +862,8 @@ class Game {
   updateTorches() {
     const p = this.player;
     const f = p.forward();
-    this.renderer.setTorch(p.torchOn && !p.hidden, clamp(p.torchBattery / 40, 0.2, 1),
+    this.renderer.setTorch(p.torchOn && !p.hidden && !p.dead, clamp(p.torchBattery / 40, 0.2, 1),
       this.renderer.camera.position, f);
-
     if (this.bob && this.bob.active) {
       const yaw = this.bob.yaw + this.bob.sweep;
       const dir = new THREE.Vector3(Math.sin(yaw), -0.22, Math.cos(yaw)).normalize();
@@ -690,21 +872,159 @@ class Game {
     } else this.renderer.setBobTorch(false);
   }
 
+  // Purely visual: lights stutter near Grump and during a storm. Runs on every
+  // machine, so it never needs to be sent anywhere.
+  updateLightJitter(dt) {
+    this.stormFlashT = Math.max(0, (this.stormFlashT || 0) - dt);
+    const g = this.grump;
+    const near = g && (g.turned || g.dread > 0) && this.phase === 'night';
+    for (const f of this.school.fixtures) {
+      f.jit = this.stormFlashT > 0 || (near && Math.hypot(f.x - g.x, f.z - g.z) < 8);
+    }
+  }
+
   animateDoors(dt) {
     for (const d of this.school.doors) {
       if (!d.mesh) continue;
-      const target = d.open ? 1 : 0;
-      d.swing = lerp(d.swing, target, Math.min(1, dt * 7));
-      for (const pivot of d.mesh.children) {
-        pivot.rotation.y = d.swing * 1.45 * (pivot.userData.swingSign || 1);
-      }
+      d.swing = lerp(d.swing, d.open ? 1 : 0, Math.min(1, dt * 7));
+      for (const pivot of d.mesh.children) pivot.rotation.y = d.swing * 1.45 * (pivot.userData.swingSign || 1);
     }
+  }
+
+  // Dead in co-op -- host included -- the game carries on without you, and the
+  // camera follows whoever is still alive. Click cycles between them.
+  spectateCamera(dt) {
+    const alive = [...this.remotePlayers.values()].filter(p => !p.dead);
+    const cam = this.renderer.camera;
+    if (!alive.length) { this.player.applyCamera(cam, dt); return; }
+    if (this.clickQueued) {
+      this.clickQueued = false;
+      this.spectateIdx = ((this.spectateIdx || 0) + 1) % alive.length;
+      this.ui.toast('Watching ' + alive[this.spectateIdx % alive.length].name);
+    }
+    const t = alive[(this.spectateIdx || 0) % alive.length];
+    const back = 2.4, yaw = t.yaw;
+    const tx = t.x + Math.sin(yaw) * back, tz = t.z + Math.cos(yaw) * back;
+    const k = Math.min(1, dt * 5);
+    cam.position.x = lerp(cam.position.x, tx, k);
+    cam.position.z = lerp(cam.position.z, tz, k);
+    cam.position.y = lerp(cam.position.y, 1.7, k);
+    cam.lookAt(t.x, 0.5, t.z);
+  }
+
+  updateJumpscare(dt) {
+    if (this.jumpT <= 0) { if (this.jumpModel) this.jumpModel.visible = false; return; }
+    this.jumpT -= dt;
+    if (!this.jumpModel) {
+      this.jumpModel = makeGrump();
+      setGrumpStage(this.jumpModel, 4);
+      this.renderer.scene.add(this.jumpModel);
+    }
+    const cam = this.renderer.camera;
+    const f = this.player.forward();
+    const m = this.jumpModel;
+    m.visible = true;
+    // Starts a little way off and lunges at the lens, so his whole face fills
+    // the screen rather than the camera clipping into his chest. His head sits
+    // 1.36m up the scaled model, so that is how far down it has to go.
+    const dist = 0.8 + Math.max(0, this.jumpT - 0.45) * 1.1;
+    m.position.set(cam.position.x + f.x * dist, cam.position.y - 1.36, cam.position.z + f.z * dist);
+    // Face the camera, and light the face from below so it reads in the dark.
+    m.rotation.y = this.player.yaw + Math.PI;
+    m.userData.parts.head.rotation.z = Math.sin(this.jumpT * 40) * 0.2;
+    this.renderer.setGrumpGlow(true, new THREE.Vector3(
+      cam.position.x + f.x * 0.3, cam.position.y - 0.3, cam.position.z + f.z * 0.3), 2.2);
+    this.player.shake = 1.4;
+  }
+
+  // ================================================================= fx
+
+  // Play something for everyone. Positional kinds are attenuated per player.
+  fx(kind, x, z, e = {}) {
+    this.playFx(kind, x, z, e);
+    if (this.online && this.isHost) {
+      this.net.broadcast({ t: 'ev', k: 'fx', f: kind, x: +(+x).toFixed(1), z: +(+z).toFixed(1), e });
+    }
+  }
+
+  playFx(kind, x, z, e) {
+    const p = this.player, sfx = this.sfx, ui = this.ui;
+    const d = dist2(p.x, p.z, x, z);
+    const att = r => clamp(1 - d / r, 0, 1);
+    const mine = e.id !== undefined && e.id === this.myTargetId;
+    switch (kind) {
+      case 'switch': if (d < 26) { sfx.lightOff(); ui.subtitle('a switch clicks somewhere'); } break;
+      case 'lockerOpen': if (d < 22) sfx.lockerOpen(); break;
+      case 'sub': if (d < (e.range || 20)) ui.subtitle(e.text); break;
+      case 'bobSpot':
+        if (d < 34) {
+          sfx.bobSpot();
+          sfx.voice('bobClass', clamp(att(34) + 0.2, 0.25, 1));
+          ui.subtitle('Bob: "GET BACK TO YOUR CLASSROOM."');
+        }
+        if (mine) ui.flash('spotted');
+        break;
+      case 'bobGrab': if (d < 30) { sfx.bobGrab(); sfx.voice('bobScream', clamp(att(30) + 0.3, 0.2, 1)); } break;
+      case 'say':
+        if (d < 22) {
+          ui.subtitle('Grump: "' + e.text + '"');
+          if (!sfx.isSpeaking) sfx.voice(e.voice, Math.min(1, att(22) + 0.35), e.rate || 1);
+        }
+        break;
+      case 'charge':
+        if (d < 28) sfx.voice('angry', clamp(att(28) + 0.3, 0.2, 1), 0.78);
+        if (mine) {
+          sfx.stinger();
+          ui.flash('grump');
+          ui.subtitle('He has seen you. RUN.');
+          p.fear = Math.min(100, p.fear + 35);
+        }
+        break;
+      case 'camp':
+        if (mine) { ui.subtitle('Something has stopped right outside. Do not move.'); p.fear = 100; }
+        break;
+      case 'breath': if (d < 9) sfx.breath(att(9) * (e.strong ? 1.4 : 1)); break;
+      case 'whisper': if (d < 18) sfx.whisper(att(18) * (e.strong ? 2 : 1)); break;
+      case 'knock':
+        if (d < 30) { sfx.knock(clamp(att(30) + 0.25, 0, 1)); if (d < 18) ui.subtitle('Knock. Knock. Knock.'); }
+        break;
+      case 'grumpAngry': if (d < 28) sfx.grumpAngry(); break;
+      case 'grumpCatch': if (d < 30 && !mine) sfx.voice('angry', att(30), 0.8); break;
+      case 'pop': if (d < 24) sfx.bulbPop(att(24)); break;
+      case 'cry': if (d < 30) { sfx.babyCry(); if (d < 14) ui.subtitle(e.name + ' is crying.'); } break;
+      case 'genStart': if (d < 30) sfx.genStart(); break;
+      case 'blackout': sfx.blackout(); ui.flash('blackout'); break;
+      case 'big':
+        ui.bigLine(e.text);
+        if (e.reveal) { sfx.grumpReveal(); sfx.voice('angry', 1, 0.8); }
+        if (e.stinger) sfx.stinger();
+        break;
+      case 'toast': ui.toast(e.text); break;
+      case 'quest':
+        ui.toast(`✓ ${e.title} — ${e.reward} left in the crib`);
+        sfx.ding();
+        break;
+    }
+  }
+
+  // Report the outcome of an action to whoever did it, and only them.
+  feedback(actor, text, sound) {
+    if (!actor || actor === 'me' || actor === this.player.id) {
+      this.ui.toast(text);
+      if (sound && this.sfx[sound]) this.sfx[sound]();
+    } else if (this.isHost && this.online) {
+      this.net.sendTo(actor, { t: 'ev', k: 'fb', text, sound });
+    }
+  }
+
+  triggerCardKid(actor) {
+    if (!actor || actor === 'me') this.cardKid.maybeTrigger();
+    else if (this.isHost && this.online) this.net.sendTo(actor, { t: 'ev', k: 'cardkid' });
   }
 
   // ================================================================= actions
 
   handleInteraction(dt) {
-    // While the boy is talking there is nothing to do but stand there.
     if (this.cardKid && this.cardKid.speaking) {
       this.holdT = 0;
       this.lastInteraction = null;
@@ -713,31 +1033,34 @@ class Game {
     }
     const inter = findInteraction(this);
     this.lastInteraction = inter;
-    if (!inter) { this.holdT = 0; this.ui.setPrompt(null); return; }
+    if (!inter) { this.holdT = 0; this.holdLabel = null; this.ui.setPrompt(null); return; }
+    if (inter.label !== this.holdLabel) { this.holdT = 0; this.holdLabel = inter.label; }
 
     if (this.input.interact) {
-      if (!inter.hold) {
-        if (!this.firedTap) { this.firedTap = true; inter.act(); }
-      } else {
-        this.holdT += dt;
-        if (this.player.hidden === null && Math.random() < dt * 3) this.sfx.searchTick();
-        if (this.holdT >= inter.hold) {
-          this.holdT = 0;
-          this.firedTap = true;
+      // After an action fires, E has to be let go before the next one starts.
+      // Without this, holding E to hide carried straight into "Get out".
+      if (!this.needRelease) {
+        if (!inter.hold) {
+          this.needRelease = true;
           inter.act();
+        } else {
+          this.holdT += dt;
+          if (!this.player.hidden && Math.random() < dt * 3) this.sfx.searchTick();
+          if (this.holdT >= inter.hold) {
+            this.holdT = 0;
+            this.needRelease = true;
+            inter.act();
+          }
         }
       }
     } else {
-      this.firedTap = false;
+      this.needRelease = false;
       this.holdT = Math.max(0, this.holdT - dt * 2.5);
     }
     this.ui.setPrompt(inter, this.holdT);
   }
 
   onSecondary() {
-    // R takes the prompt's second option when there is one -- hiding rather than
-    // searching, taping a locker shut. It fires immediately even where E would
-    // hold, because the second option is always the panic option.
     const inter = this.lastInteraction;
     if (inter && inter.extra) { inter.extra.act(); return; }
     useSelected(this);
@@ -751,45 +1074,45 @@ class Game {
     this.sfx.click();
   }
 
+  // --- searching
   searchProp(prop) {
     if (prop.searched) return;
-    if (!this.isHost) { this.net.send({ t: 'act', k: 'search', id: prop.id }); prop.searched = true; return; }
-    const found = this.doSearch(prop, this.player);
-    this.netEvent({ k: 'search', id: prop.id, found, by: this.net.myId });
+    prop.searched = true;
+    if (!this.isHost) { this.net.send({ t: 'act', k: 'search', id: prop.id }); return; }
+    const found = this.rollSearch(prop);
+    this.giveFound(found);
+    this.netEvent({ k: 'search', id: prop.id, found, by: 'host' });
   }
 
-  doSearch(prop, who) {
+  rollSearch(prop) {
     prop.searched = true;
     const rng = makeRng(hashStr(this.seed + ':' + prop.id + ':' + this.night));
     const found = rollLoot(prop.search, rng, this.night);
-    if (who === this.player) {
-      this.player.stats.searched++;
-      this.score += 8;
-      if (found) {
-        if (this.player.give(found)) {
-          this.sfx.pickup();
-          this.ui.toast(`Found: ${itemName(found)}`);
-        } else {
-          this.spawnGroundItem(found, this.player.x, this.player.z);
-          this.ui.toast(`Found ${itemName(found)} — no room, dropped it.`);
-        }
-      } else {
-        this.sfx.searchTick();
-        this.ui.toast('Nothing in there.');
-      }
-    }
-    this.emitNoise(prop.x, prop.z, prop.search === 'locker' ? 0.55 : 0.35, 'search');
+    this.emitNoise(prop.x, prop.z, prop.search === 'locker' ? 0.45 : 0.3, 'search');
+    const room = this.school.rooms[prop.room];
+    this.questEvent('search', { room: room ? room.type : null });
     return found;
   }
 
-  hideIn(prop) {
-    this.player.enterHide(prop, this);
+  giveFound(found) {
+    this.player.stats.searched++;
+    this.score += 8;
+    if (!found) { this.sfx.searchTick(); this.ui.toast('Nothing in there.'); return; }
+    if (this.player.give(found)) {
+      this.sfx.pickup();
+      this.ui.toast(`Found: ${itemName(found)}`);
+    } else {
+      this.spawnGroundItem(found, this.player.x, this.player.z);
+      this.ui.toast(`Found ${itemName(found)} — no room, dropped it.`);
+    }
   }
 
+  hideIn(prop) { this.player.enterHide(prop, this); }
+
+  // --- items on the floor
   spawnGroundItem(kind, x, z) {
-    const it = this.groundItems.spawn(kind, x, z);
-    if (this.isHost && this.net.online) this.netEvent({ k: 'drop', id: it.id, kind, x, z });
-    return it;
+    if (!this.isHost) { this.net.send({ t: 'act', k: 'drop', kind, x, z }); return null; }
+    return this.groundItems.spawn(kind, x, z);
   }
 
   pickUpGroundItem(it) {
@@ -801,14 +1124,45 @@ class Game {
     this.sfx.pickup();
     this.ui.toast(itemName(it.kind));
     this.groundItems.remove(it);
-    if (this.net.online) this.net.send({ t: 'act', k: 'take', id: it.id });
+    if (!this.isHost) {
+      this.pendingTakes.set(it.id, this.time + 2);
+      this.net.send({ t: 'act', k: 'take', id: it.id, kind: it.kind });
+    }
   }
 
+  // --- food
+  eat(kind) {
+    const def = ITEMS[kind];
+    if (!def || !def.food) return;
+    const p = this.player;
+    p.take(kind);
+    p.food = Math.min(100, p.food + def.food);
+    if (def.stamina) p.stamina = Math.min(100, p.stamina + def.stamina);
+    p.fear = Math.max(0, p.fear - 6);
+    this.sfx.eat();
+    this.ui.toast(`${def.name}. ${p.food > 80 ? 'Full tummy.' : 'Better.'}`);
+    this.questAction('eat');
+  }
+
+  openLunchbox() {
+    const p = this.player;
+    p.take('lunchbox');
+    const got = lunchboxContents(Math.random);
+    const kept = [];
+    for (const k of got) {
+      if (p.give(k)) kept.push(k);
+      else this.spawnGroundItem(k, p.x + (Math.random() - 0.5), p.z + (Math.random() - 0.5));
+    }
+    this.sfx.pickup();
+    this.ui.toast('Inside: ' + got.map(itemName).join(', ') + (kept.length < got.length ? ' (some fell out)' : ''));
+  }
+
+  // --- toddlers
   carryToddler(t) {
     if (!this.player.handsFree) { this.sfx.deny(); return; }
     this.toddlers.pickUp(t, this);
     this.player.hands = { toddler: t.id };
-    if (this.net.online) this.net.send({ t: 'act', k: 'carry', id: t.id });
+    if (!this.isHost) this.net.send({ t: 'act', k: 'carry', id: t.id });
   }
 
   putDownToddler() {
@@ -816,16 +1170,16 @@ class Game {
     if (id === undefined) return;
     const t = this.toddlers.byId(id);
     this.player.hands = null;
-    if (t) {
-      const f = this.player.forward();
-      this.toddlers.place(t, this.player.x + f.x * 0.7, this.player.z + f.z * 0.7, this);
-    }
-    if (this.net.online) this.net.send({ t: 'act', k: 'drop_toddler', id });
+    const f = this.player.forward();
+    const x = this.player.x + f.x * 0.7, z = this.player.z + f.z * 0.7;
+    if (t) this.toddlers.place(t, x, z, this, true);
+    if (!this.isHost) this.net.send({ t: 'act', k: 'drop_toddler', id, x, z });
   }
 
   releaseToddler(id, x, z) {
     const t = this.toddlers.byId(id);
-    if (t) this.toddlers.place(t, x, z, this);
+    if (t) this.toddlers.place(t, x, z, this, true);
+    if (!this.isHost) this.net.send({ t: 'act', k: 'drop_toddler', id, x, z });
   }
 
   carrierOf(id) {
@@ -834,9 +1188,54 @@ class Game {
     return null;
   }
 
+  feedToddler(t, food) {
+    this.player.take(food);
+    this.sfx.eat();
+    this.ui.toast(t.name + ' stops crying.');
+    this.score += 15;
+    if (this.isHost) { this.toddlers.feed(t); this.questEvent('fed'); }
+    else this.net.send({ t: 'act', k: 'feed', id: t.id });
+  }
+
+  teddyToddler(t) {
+    this.player.hands = null;
+    this.sfx.ding();
+    this.ui.toast(t.name + ' holds the teddy and goes quiet.');
+    this.score += 45;
+    if (this.isHost) this.toddlers.calm(t);
+    else this.net.send({ t: 'act', k: 'teddy', id: t.id });
+  }
+
+  // --- chores
+  cleanMess(m) {
+    if (!this.messes.remove(m)) return;
+    this.sfx.clean();
+    this.player.stats.cleaned++;
+    this.score += 35;
+    this.ui.toast(`Cleaned up ${m.label}. (${this.messes.remaining} left)`);
+    if (this.isHost) {
+      this.messCleanedByAnyone();
+      this.netEvent({ k: 'mess', id: m.id });
+    } else {
+      this.net.send({ t: 'act', k: 'mess', id: m.id });
+    }
+  }
+
+  messCleanedByAnyone() {
+    // Tidying is the one thing that reliably takes the edge off him.
+    if (!this.grump.turned) this.grump.anger(-1.5, this, 'tidy');
+    this.questEvent('clean');
+  }
+
+  genAction(kind) {
+    if (this.isHost) this.generator[kind](this, 'me');
+    else this.net.send({ t: 'act', k: 'gen', kind });
+  }
+
   placeLight(kind, x, z) {
     this.portableLights.place(kind, x, z);
-    if (this.net.online) this.net.send({ t: 'act', k: 'light', kind, x, z });
+    if (this.isHost) this.netEvent({ k: 'light', kind, x, z });
+    else this.net.send({ t: 'act', k: 'light', kind, x, z });
   }
 
   readDrawing() {
@@ -847,44 +1246,28 @@ class Game {
     document.exitPointerLock();
     this.ui.showDrawing(page);
     this.sfx.ding();
+    this.questAction('drawing');
   }
 
-  toggleDoor(d, open) {
+  // --- doors and lights
+  toggleDoor(d, open, silent) {
     if (d.locked && open) { this.sfx.deny(); return; }
     d.open = open;
     if (d.box) d.box.active = !open;
-    this.sfx.doorMove(open);
-    this.emitNoise(d.x, d.z, 0.4, 'door');
-    if (this.net.online) this.netEvent({ k: 'door', id: d.id, open, locked: d.locked });
+    if (!silent) {
+      this.sfx.doorMove(open);
+      this.emitNoise(d.x, d.z, 0.4, 'door');
+    }
+    this.netEvent({ k: 'door', id: d.id, open, locked: d.locked });
   }
 
   aiOpenDoor(d) {
-    if (d.open) return;
-    if (d.locked) return;
+    if (d.open || d.locked) return;
     d.open = true;
     if (d.box) d.box.active = false;
-    const dd = dist2(d.x, d.z, this.player.x, this.player.z);
-    if (dd < 24) this.sfx.doorMove(true);
-    if (this.net.online && this.isHost) this.netEvent({ k: 'door', id: d.id, open: true, locked: d.locked });
+    if (dist2(d.x, d.z, this.player.x, this.player.z) < 24) this.sfx.doorMove(true);
+    this.netEvent({ k: 'door', id: d.id, open: true, locked: d.locked });
   }
-
-  escape() {
-    this.running = false;
-    document.exitPointerLock();
-    const total = Math.round(this.score + this.toddlers.saved * 150 + this.night * 100);
-    this.sfx.win();
-    this.sfx.setDrone(0);
-    this.sfx.setGenerator(false, 0);
-    this.ui.showOver('YOU GOT OUT', 'The gate closes behind you. Nobody follows.', [
-      `Nights survived: <b>${this.night - 1}</b>`,
-      `Little ones carried out: <b>${this.toddlers.saved}</b>`,
-      `Drawings found: <b>${this.player.stats.drawings}</b> of ${DRAWINGS.length}`,
-      `Grump, at the end: <b>${this.grumpMood()}</b>`,
-      `Final score: <b>${total}</b>`
-    ]);
-  }
-
-  // ================================================================= light
 
   applyPower() {
     const on = this.generator.running;
@@ -897,38 +1280,58 @@ class Game {
     if (this.built) {
       for (const f of this.school.fixtures) {
         if (!f.mesh || f.portable) continue;
-        f.mesh.material = f.on ? this.built.panelMat : this.built.panelOff;
+        f.mesh.material = f.on && !f.broken ? this.built.panelMat : this.built.panelOff;
       }
     }
   }
 
   onPowerChanged(on) {
     this.applyPower();
-    if (this.net.online && this.isHost) this.netEvent({ k: 'gen', on });
+    if (this.online && this.isHost) this.netEvent({ k: 'gen', on });
   }
 
   setRoomLights(room, on, by) {
     room.lightsOn = on;
     this.applyPower();
     if (by === 'player') this.sfx[on ? 'lightOn' : 'lightOff']();
-    if (this.net.online) this.netEvent({ k: 'lights', room: room.id, on });
+    if (this.isHost) this.questEvent('lights', { room: room.type, on });
+    this.netEvent({ k: 'lights', room: room.id, on });
   }
 
   resetBreakers() {
-    // The school is closed, so most of it starts dark. Deciding which rooms are
-    // worth the fuel is the whole light-management game.
-    for (const r of this.school.rooms) {
-      r.lightsOn = r === home || r.type === 'hall' || r.type === 'boiler';
-    }
+    for (const r of this.school.rooms) r.lightsOn = true;
     this.applyPower();
     this.sfx.lightOn();
     this.ui.toast('Every light in the school comes on.');
     this.emitNoise(this.fusebox.x, this.fusebox.z, 0.6, 'breaker');
-    if (this.net.online) this.netEvent({ k: 'breakers' });
+    this.netEvent({ k: 'breakers' });
   }
 
-  // Brightness at a point: ceiling fixtures light only their own room, portable
-  // lights leak anywhere. This one number drives fear, Bob and Grump.
+  // Grump walking under a light kills the bulb for a while. Host only.
+  popLightNear(x, z, r) {
+    let best = null, bd = r;
+    for (const f of this.school.fixtures) {
+      if (f.portable || !f.on || f.broken) continue;
+      const d = Math.hypot(f.x - x, f.z - z);
+      if (d < bd) { bd = d; best = f; }
+    }
+    if (!best) return;
+    best.broken = true;
+    best.brokenT = 25;
+    this.fx('pop', best.x, best.z);
+    this.applyPower();
+  }
+
+  tickBrokenLights(dt) {
+    let changed = false;
+    for (const f of this.school.fixtures) {
+      if (!f.broken || f.portable) continue;
+      f.brokenT -= dt;
+      if (f.brokenT <= 0) { f.broken = false; changed = true; }
+    }
+    if (changed) this.applyPower();
+  }
+
   roomBrightness(x, z) {
     const room = this.school.roomAt(x, z);
     let b = 0;
@@ -958,28 +1361,38 @@ class Game {
   // ================================================================= threats
 
   threatTargets() {
-    const out = [this.player];
+    const out = [];
+    if (!this.player.dead) out.push(this.player);
     for (const rp of this.remotePlayers.values()) if (!rp.dead) out.push(rp);
     return out;
   }
+
   targetById(id) {
-    if (id === this.player.id || id === undefined || id === null) return this.player;
-    return this.remotePlayers.get(id) || this.player;
+    if (id === this.player.id) return this.player;
+    return this.remotePlayers.get(id) || null;
   }
-  huntTarget(grump) {
-    // Grump prefers whoever is least protected by light.
-    let best = null, bestScore = -1;
+
+  nearestTarget(x, z) {
+    let best = null, bd = Infinity;
     for (const t of this.threatTargets()) {
-      if (t.dead) continue;
+      const d = dist2(x, z, t.x, t.z);
+      if (d < bd) { bd = d; best = t; }
+    }
+    return best;
+  }
+
+  huntTarget(grump) {
+    let best = null, bestScore = -Infinity;
+    for (const t of this.threatTargets()) {
+      if (grump.ignore[t.id]) continue;
       const d = dist2(grump.x, grump.z, t.x, t.z);
       const lit = this.roomBrightness(t.x, t.z);
-      const s = (1 - lit) * 2 + clamp(1 - d / 60, 0, 1) + (t.hidden ? -0.6 : 0);
+      const s = (1 - lit) * 2 + clamp(1 - d / 60, 0, 1) + (t.hidden ? -0.8 : 0) + (t.downed ? 0.6 : 0);
       if (s > bestScore) { bestScore = s; best = t; }
     }
     return best;
   }
 
-  // How close the nearest threat feels. Drives fear and the drone.
   threatPressure(x, z) {
     let p = 0;
     if (this.bob && this.bob.active) {
@@ -988,7 +1401,7 @@ class Game {
     }
     if (this.grump) {
       const d = dist2(x, z, this.grump.x, this.grump.z);
-      const w = this.grump.hunting ? 1.7 : this.grump.state === 'stalk' ? 0.9 : 0.3;
+      const w = this.grump.hunting ? 1.8 : (this.grump.state === 'stalk' || this.grump.state === 'loom') ? 0.9 : 0.3;
       p = Math.max(p, clamp(1 - d / 20, 0, 1) * w);
     }
     return clamp(p, 0, 1.6);
@@ -1001,8 +1414,8 @@ class Game {
 
   flushNoise() {
     for (const n of this.noiseEvents) {
-      if (this.bob && this.bob.active) this.bob.hearNoise(n.x, n.z, n.level, this);
-      if (this.grump) this.grump.hearNoise(n.x, n.z, n.level, this);
+      if (this.bob.active) this.bob.hearNoise(n.x, n.z, n.level, this);
+      this.grump.hearNoise(n.x, n.z, n.level, this);
     }
     this.noiseEvents.length = 0;
   }
@@ -1017,85 +1430,162 @@ class Game {
     return best;
   }
 
+  hideSpotOf(t) {
+    if (t === this.player) return this.player.hidden || null;
+    return t.hiddenPropId !== null && t.hiddenPropId !== undefined ? this.propById.get(t.hiddenPropId) || null : null;
+  }
+
+  // Who is inside this hiding place, if anyone -- local or remote.
   occupantOf(prop) {
     if (this.player.hidden === prop) {
-      if (this.player.tapedIn > 0) { this.ui.toast('The door holds.'); return null; }
-      this.player.exitHide(this);
+      if (this.player.tapedIn > 0) { this.ui.toast('The door rattles. The tape holds.'); return null; }
       return this.player;
+    }
+    for (const rp of this.remotePlayers.values()) {
+      if (rp.hidden && rp.hiddenPropId === prop.id && !rp.taped) return rp;
     }
     return null;
   }
 
-  // ---- consequences
-
-  onBobGrab(t) {
-    if (t !== this.player) return;
-    const p = this.player;
-    p.hurt(28, this, 'bob');
-    const n = p.dropAll(this);
-    const lf = this.school.lostfound;
-    p.x = lf.cx; p.z = lf.cz;
-    p.hidden = null;
-    p.fear = Math.min(100, p.fear + 30);
-    this.ui.flash('spotted');
-    this.ui.bigLine('LOST AND FOUND');
-    this.ui.toast(n ? `Bob took ${n} of your things.` : 'Bob put you back where you belong.');
+  forceUnhide(t) {
+    if (t === this.player) {
+      if (this.player.hidden) { this.player.exitHide(this); this.ui.toast('The door is pulled open.'); }
+    } else if (this.isHost && this.online) {
+      this.net.sendTo(t.id, { t: 'ev', k: 'unhide' });
+    }
   }
 
-  onGrumpCatch(t) {
-    if (t !== this.player) return;
-    const p = this.player;
-    this.ui.flash('grump');
-    p.hurt(62, this, 'grump');
-    p.fear = 100;
-    // He takes one of the children with him.
+  // Damage goes to whoever was actually caught -- never to whoever happens to
+  // be running the simulation.
+  hitPlayer(t, src, extra = {}) {
+    if (t === this.player) this.applyHit(src, extra);
+    else if (this.isHost && this.online) this.net.sendTo(t.id, { t: 'ev', k: 'hit', src, e: extra });
+  }
+
+  grumpCaught(t) {
+    // The world consequence is decided by the host...
+    let text = 'HE FOUND YOU';
     const safe = this.toddlers.list.filter(x => x.state === 'safe');
     if (safe.length && Math.random() < 0.7) {
       const t2 = safe[(Math.random() * safe.length) | 0];
       t2.state = 'taken';
       t2.model.visible = false;
       this.score -= 100;
-      this.ui.bigLine(t2.name.toUpperCase() + ' IS GONE');
-    } else {
-      this.ui.bigLine('HE FOUND YOU');
+      text = t2.name.toUpperCase() + ' IS GONE';
+      this.fx('toast', 0, 0, { text: `Grump took ${t2.name}.` });
+    }
+    // ...and the pain goes to the one he caught.
+    this.hitPlayer(t, 'grump', { text });
+  }
+
+  applyHit(src, e = {}) {
+    const p = this.player;
+    if (p.dead) return;
+    if (src === 'bob') {
+      p.invuln = 0;
+      p.hurt(28, this, 'bob');
+      if (p.hidden) p.exitHide(this);
+      const n = p.dropAll(this);
+      const lf = this.school.lostfound;
+      p.x = lf.cx; p.z = lf.cz;
+      p.fear = Math.min(100, p.fear + 30);
+      this.ui.flash('spotted');
+      this.ui.bigLine('LOST AND FOUND');
+      this.ui.toast(n ? `Bob took ${n} of your things.` : 'Bob put you back where you belong.');
+    } else if (src === 'grump') {
+      p.invuln = 0;
+      if (p.hidden) p.exitHide(this);
+      this.jumpT = 0.9;
+      this.sfx.jumpscare();
+      this.sfx.voice('angry', 1, 0.75);
+      this.ui.flash('grump');
+      p.hurt(62, this, 'grump');
+      p.fear = 100;
+      this.ui.bigLine(e.text || 'HE FOUND YOU');
     }
   }
 
-  onPlayerDowned(source) {
-    this.ui.bigLine('YOU CANNOT GET UP');
-    if (this.net.online) this.net.send({ t: 'act', k: 'downed' });
+  onGrumpStageUp(stage) {
+    const lines = ['', 'HE IS KEEPING SCORE', 'HE HAS STOPPED SMILING', 'HE KNOWS WHERE YOU SLEEP', 'GRUMP THE BABY DESTROYER'];
+    if (lines[stage]) {
+      this.ui.bigLine(lines[stage]);
+      this.sfx.grumpReveal();
+    }
+  }
+
+  onPlayerDowned() {
+    this.ui.bigLine(this.online ? 'YOU CANNOT GET UP\nA FRIEND CAN PAT YOU' : 'YOU CANNOT GET UP');
   }
 
   onPlayerDead() {
+    if (this.online) {
+      // Co-op: you become a ghost and watch. The game is over when everyone is.
+      this.ui.bigLine('YOU ARE GONE');
+      this.ui.toast('Spectating. If anyone escapes, everyone does.');
+      this.player.hidden = null;
+      this.player.torchOn = false;
+      return;
+    }
     this.running = false;
     document.exitPointerLock();
     this.sfx.lose();
     this.sfx.setDrone(0);
     this.sfx.setGenerator(false, 0);
+    this.showLoss();
+  }
+
+  showLoss() {
     const s = this.player.stats;
     this.ui.showOver('THE SCHOOL KEEPS YOU', 'Bob will put you in Lost and Found in the morning.', [
       `Nights survived: <b>${this.night - 1}</b>`,
       `Little ones safe: <b>${this.toddlers.saved}</b>`,
+      `Jobs finished: <b>${this.quests.completed}</b>`,
       `Containers searched: <b>${s.searched}</b> · Messes cleaned: <b>${s.cleaned}</b>`,
       `Drawings found: <b>${s.drawings}</b> of ${DRAWINGS.length}`,
       `Score: <b>${Math.round(this.score)}</b>`
     ]);
   }
 
-  onGrumpStageUp(stage, why) {
-    const lines = [
-      '', 'HE IS KEEPING SCORE', 'HE HAS STOPPED SMILING',
-      'HE KNOWS WHERE YOU SLEEP', 'GRUMP THE BABY DESTROYER'
-    ];
-    if (lines[stage]) {
-      this.ui.bigLine(lines[stage]);
-      this.sfx.grumpReveal();
-      if (stage >= 4) this.sfx.voice('angry');
+  gameOverAll() {
+    this.net.broadcast({ t: 'ev', k: 'gameover' });
+    this.endRun(false);
+  }
+
+  endRun(won) {
+    this.running = false;
+    document.exitPointerLock();
+    this.sfx.setDrone(0);
+    this.sfx.setGenerator(false, 0);
+    if (won) {
+      this.sfx.win();
+      const total = Math.round(this.score + this.toddlers.saved * 150 + this.night * 100);
+      this.ui.showOver('YOU GOT OUT', 'The gate closes behind you. Nobody follows.', [
+        `Nights survived: <b>${this.night - 1}</b>`,
+        `Little ones carried out: <b>${this.toddlers.saved}</b>`,
+        `Jobs finished: <b>${this.quests.completed}</b>`,
+        `Drawings found: <b>${this.player.stats.drawings}</b> of ${DRAWINGS.length}`,
+        `Grump, at the end: <b>${this.grumpMood()}</b>`,
+        `Final score: <b>${total}</b>`
+      ]);
+    } else {
+      this.sfx.lose();
+      this.showLoss();
     }
   }
 
+  escape() {
+    if (!this.online) { this.endRun(true); return; }
+    if (this.isHost) { this.net.broadcast({ t: 'ev', k: 'win' }); this.endRun(true); }
+    else this.net.send({ t: 'act', k: 'escape' });
+  }
+
   requestRevive(rp) {
-    this.net.send({ t: 'act', k: 'revive', id: rp.id });
+    if (this.isHost) {
+      rp.downed = false;
+      this.net.sendTo(rp.id, { t: 'ev', k: 'revive' });
+    } else {
+      this.net.send({ t: 'act', k: 'revive', id: rp.id });
+    }
     this.ui.toast(`${rp.name} is up.`);
   }
 
@@ -1104,91 +1594,194 @@ class Game {
     return fmtTime(this.generator.fuel / Math.max(r, 0.01)) + ' of burn';
   }
 
+  // ================================================================= quests
+
+  questEvent(type, data) {
+    if (this.isHost && this.quests) this.quests.event(type, data);
+  }
+
+  // Something the local player did that counts for the list.
+  questAction(type, data) {
+    if (this.isHost) this.questEvent(type, data);
+    else this.net.send({ t: 'act', k: 'quest', type });
+  }
+
+  questDeliver(item) {
+    const p = this.player;
+    if (!p.take(item)) return;
+    this.sfx.ding();
+    if (item === 'hamster') this.ui.toast('Mr. Wiggles is home. He runs straight into his wheel.');
+    if (item === 'holocard') this.ui.toast('You leave the card on the shelf. Nobody comes for it.');
+    if (item === 'crayon') this.ui.toast('Grump takes the crayon without looking at you.');
+    if (this.isHost) this.handleDeliver(item);
+    else this.net.send({ t: 'act', k: 'deliver', item });
+  }
+
+  handleDeliver(item) {
+    if (item === 'crayon' && !this.grump.turned) {
+      this.grump.anger(-15, this, 'crayon');
+      this.fx('say', this.grump.x, this.grump.z, { text: 'That is mine. You touched it.', voice: 'mean' });
+    }
+    this.questEvent('deliver', { item });
+  }
+
+  questReward(q, items) {
+    const c = this.crib;
+    const fx = c ? c.x + Math.sin(c.rot) * 1.1 : this.school.home.cx;
+    const fz = c ? c.z + Math.cos(c.rot) * 1.1 : this.school.home.cz;
+    items.forEach((k, i) => this.spawnGroundItem(k, fx + (i - (items.length - 1) / 2) * 0.45, fz));
+    this.score += 90;
+    this.fx('quest', 0, 0, { title: q.title, reward: items.map(itemName).join(' + ') });
+    if (this.quests.allDone) this.fx('toast', 0, 0, { text: 'The whole list is done. Mrs. Honeywell would be proud.' });
+  }
+
+  onQuestSeenDone() { /* clients hear about completion through the quest fx */ }
+
   // ================================================================= grump talk
 
   tryTalkToGrump() {
     const g = this.grump;
     if (g.hunting || g.turned) {
-      this.ui.subtitle('Grump: "' + 'No more questions.' + '"');
+      this.ui.subtitle('Grump: "No more questions."');
       this.sfx.grumpAngry();
       return;
     }
-    g.busy = true;
     this.talkedToday = true;
     this.dialogueOpen = true;
+    if (this.isHost) g.busy = true;
+    else this.net.send({ t: 'act', k: 'talk', on: true });
     document.exitPointerLock();
-    const rng = makeRng(hashStr(this.seed + ':q:' + this.night + ':' + Math.floor(g.resent)));
-    this.askedQs = this.askedQs || new Set();
+    const rng = makeRng(hashStr(this.seed + ':q:' + this.night + ':' + Math.floor(g.resent) + ':' + this.myTargetId));
     const q = pickQuestion(g.resent, this.askedQs, rng);
     this.askedQs.add(q.q);
     this.sfx.voice('greeting');
-    this.ui.showDialogue(q, g.resent, (ans) => {
-      g.anger(ans.r, this, 'answer');
+    this.ui.showDialogue(q, g.resent, ans => {
+      if (this.isHost) {
+        g.anger(ans.r, this, 'answer');
+        this.rememberAnswer(ans.t);
+      } else {
+        // Show the meter move now; the host's number arrives with the next snapshot.
+        g.resent = clamp(g.resent + ans.r, 0, 130);
+        this.net.send({ t: 'act', k: 'answer', r: ans.r, text: ans.t });
+      }
       this.sfx.voice(g.stage >= 3 ? 'angry' : 'mean');
       this.ui.showDialogueReply(ans.reply, g.resent, () => {
         this.ui.closeDialogue();
         this.dialogueOpen = false;
-        g.busy = false;
+        if (this.isHost) g.busy = false;
+        else this.net.send({ t: 'act', k: 'talk', on: false });
         g.talkCd = 25;
         this.resumeFromOverlay();
       });
     });
   }
 
+  rememberAnswer(text) {
+    const m = this.grump.memory;
+    if (!m.includes(text)) m.push(String(text).slice(0, 60));
+    while (m.length > 8) m.shift();
+  }
+
   objectivesHtml() {
     const g = this.generator;
     const rows = [];
-    rows.push(`<h5>Today</h5>`);
-    rows.push(`<div class="${g.fuel > 55 ? 'done' : ''}">Fuel the generator — ${Math.round(g.fuel)}%</div>`);
-    rows.push(`<div class="${g.condition > 75 ? 'done' : ''}">Repair the generator — ${Math.round(g.condition)}%</div>`);
-    rows.push(`<div class="${this.messes.remaining === 0 ? 'done' : ''}">Clean up — ${this.messes.remaining} left</div>`);
-    rows.push(`<div class="${this.toddlers.lost === 0 ? 'done' : ''}">Carry the little ones home — ${this.toddlers.lost} still out</div>`);
-    rows.push(`<div class="${this.talkedToday ? 'done' : 'warn'}">Talk to Grump ${this.talkedToday ? '' : '(ignoring him is worse)'}</div>`);
+    rows.push(`<h5>Mrs. Honeywell's list</h5>`);
+    rows.push(this.quests.detailHtml() || '<div>No list today.</div>');
+    rows.push(`<h5 style="margin-top:8px">The school</h5>`);
+    rows.push(`<div>Generator — ${Math.round(g.fuel)}% fuel, ${Math.round(g.condition)}% condition</div>`);
+    rows.push(`<div class="${this.messes.remaining === 0 ? 'done' : ''}">Messes left — ${this.messes.remaining}</div>`);
+    rows.push(`<div class="${this.toddlers.lost === 0 ? 'done' : 'warn'}">Little ones still out — ${this.toddlers.lost}</div>`);
+    rows.push(`<div class="${this.player.food > 35 ? '' : 'warn'}">Tummy — ${Math.round(this.player.food)}%</div>`);
     rows.push(`<h5 style="margin-top:8px">Tonight</h5>`);
-    rows.push(`<div>Night ${this.night} of ${this.requiredNights}</div>`);
+    rows.push(`<div>Night ${this.night}${this.requiredNights > 0 ? ' of ' + this.requiredNights : ' (endless)'}</div>`);
     rows.push(`<div>Grump is ${this.grumpMood()}</div>`);
     if (!this.grump.turned) {
       const left = Math.max(0, 4 - this.night);
       rows.push(`<div class="warn">${left ? `He stops asking in ${left} day${left === 1 ? '' : 's'}.` : 'He stops asking today.'}</div>`);
-    } else {
-      rows.push(`<div class="warn">He hunts you, day and night.</div>`);
     }
+    if (this.modText) rows.push(`<div class="warn">${this.modText}</div>`);
     if (this.escapeOpen) rows.push(`<div class="warn">The front doors are open.</div>`);
     return rows.join('');
   }
 
   // ================================================================= net
 
-  broadcastWorld() {
-    this.net.broadcast({
-      t: 'world', seed: this.seed, nights: this.requiredNights, diff: this.diffName,
-      night: this.night, phase: this.phase, phaseTime: this.phaseTime
-    });
-  }
-
   netEvent(ev) {
-    if (!this.net.online) return;
+    if (!this.online) return;
     if (this.isHost) this.net.broadcast(Object.assign({ t: 'ev' }, ev));
     else this.net.send(Object.assign({ t: 'ev' }, ev));
   }
 
+  // Everything a late joiner needs that the seed alone cannot rebuild.
+  worldMessage() {
+    const s = this.school;
+    return {
+      t: 'world', seed: this.seed, nights: this.requiredNights, diff: this.diffName,
+      st: {
+        night: this.night, phase: this.phase, phaseTime: this.phaseTime,
+        doors: s.doors.map(d => (d.open ? 1 : 0) | (d.locked ? 2 : 0)),
+        lights: s.rooms.map(r => r.lightsOn ? 1 : 0),
+        searched: s.props.filter(p => p.searched).map(p => p.id),
+        messes: this.messes.serialize(),
+        quests: this.quests.list.map(q => q.spec),
+        qp: this.quests.serialize(),
+        mods: Object.keys(this.mods),
+        eo: this.escapeOpen ? 1 : 0,
+        turned: this.grump._turned ? 1 : 0,
+        resent: this.grump.resent
+      }
+    };
+  }
+
+  applyWorldState(st) {
+    const s = this.school;
+    this.night = st.night;
+    this.phase = st.phase;
+    this.phaseTime = st.phaseTime;
+    st.doors.forEach((v, i) => {
+      const d = s.doors[i];
+      if (!d) return;
+      d.open = !!(v & 1); d.locked = !!(v & 2);
+      if (d.box) d.box.active = !d.open;
+    });
+    st.lights.forEach((v, i) => { if (s.rooms[i]) s.rooms[i].lightsOn = !!v; });
+    for (const id of st.searched) { const p = this.propById.get(id); if (p) p.searched = true; }
+    this.messes.spawnForDay(this.night, this.seed);
+    for (const id of st.messes) this.messes.remove(this.messes.list[id]);
+    this.quests.load(st.quests, this.night);
+    this.quests.apply(st.qp);
+    this.applyMods(st.mods);
+    this.escapeOpen = !!st.eo;
+    if (this.escapeOpen) for (const d of s.exitDoors) d.locked = false;
+    if (st.turned) this.grump.checkSchedule(99);
+    this.grump.resent = st.resent;
+    setGrumpStage(this.grump.model, this.grump.stage);
+    this.applyPower();
+  }
+
   sendSnapshot() {
-    const players = [];
-    players.push(Object.assign({ id: 'host', n: this.myName }, this.player.serialize()));
+    const players = [Object.assign({ id: 'host', n: this.myName }, this.player.serialize())];
     for (const rp of this.remotePlayers.values()) {
       players.push({
         id: rp.id, n: rp.name, x: +rp.x.toFixed(2), z: +rp.z.toFixed(2), yaw: +rp.yaw.toFixed(2),
-        c: rp.crawling ? 1 : 0, h: rp.hidden ? 1 : 0, d: rp.downed ? 1 : 0, t: rp.torch ? 1 : 0, hp: rp.health
+        c: rp.crawling ? 1 : 0, h: rp.hidden ? 1 : 0, d: rp.downed ? 1 : 0, t: rp.torch ? 1 : 0,
+        hp: rp.health, dd: rp.dead ? 1 : 0, hid: rp.hiddenPropId
       });
     }
+    const broken = [];
+    for (const f of this.school.fixtures) if (f.broken && !f.portable) broken.push(f.id);
     this.net.broadcast({
       t: 'snap',
       p: players,
       b: this.bob.active ? { x: +this.bob.x.toFixed(2), z: +this.bob.z.toFixed(2), y: +this.bob.yaw.toFixed(2), s: this.bob.state, w: +this.bob.sweep.toFixed(2) } : null,
-      g: { x: +this.grump.x.toFixed(2), z: +this.grump.z.toFixed(2), y: +this.grump.yaw.toFixed(2), s: this.grump.state, r: Math.round(this.grump.resent) },
+      g: { x: +this.grump.x.toFixed(2), z: +this.grump.z.toFixed(2), y: +this.grump.yaw.toFixed(2), s: this.grump.state, r: Math.round(this.grump.resent), tn: this.grump._turned ? 1 : 0 },
       gen: this.generator.serialize(),
       tod: this.toddlers.serialize(),
       it: this.groundItems.serialize(),
+      ms: this.messes.serialize(),
+      bf: broken,
+      q: this.quests.serialize(),
+      eo: this.escapeOpen ? 1 : 0,
       ph: this.phase, pt: +this.phaseTime.toFixed(1), nt: this.night
     });
   }
@@ -1198,19 +1791,16 @@ class Game {
       const rp = new RemotePlayer(this, id, 'Baby', this.remotePlayers.size + 1);
       this.remotePlayers.set(id, rp);
     }
-    this.ui.chat('<b>someone joins the school</b>');
-    if (this.running) {
-      this.net.sendTo(id, {
-        t: 'world', seed: this.seed, nights: this.requiredNights, diff: this.diffName,
-        night: this.night, phase: this.phase, phaseTime: this.phaseTime
-      });
-    }
+    if (this.running) this.net.sendTo(id, this.worldMessage());
   }
 
   onPeerLeave(id) {
     const rp = this.remotePlayers.get(id);
-    if (rp) { this.renderer.scene.remove(rp.model); this.remotePlayers.delete(id); }
-    this.ui.chat('<b>someone leaves</b>');
+    if (rp) {
+      this.renderer.scene.remove(rp.model);
+      this.remotePlayers.delete(id);
+      this.ui.chat(`<b>${escapeHtml(rp.name)}</b> left`);
+    }
   }
 
   onHostGone() {
@@ -1220,42 +1810,47 @@ class Game {
 
   sendChat() {
     const v = $('#chatinput').value.trim();
+    this.chatOpen = false;
     this.ui.openChat(false);
     this.resumeFromOverlay();
     if (!v) return;
-    this.net.send({ t: 'chat', n: this.myName, m: v });
-    this.ui.chat(`<b>${this.myName}:</b> ${escapeHtml(v)}`);
+    this.net.send({ t: 'chat', n: this.myName, m: v.slice(0, 120) });
+    this.ui.chat(`<b>${escapeHtml(this.myName)}:</b> ${escapeHtml(v)}`);
   }
 
   onNetMessage(msg, from) {
     switch (msg.t) {
       case 'hello': {
         const rp = this.remotePlayers.get(from);
-        if (rp) rp.name = String(msg.name || 'Baby').slice(0, 12);
-        this.ui.chat(`<b>${rp ? rp.name : 'someone'} joins</b>`);
+        if (rp) { rp.name = String(msg.name || 'Baby').slice(0, 12); rp.setName(rp.name); }
+        this.ui.chat(`<b>${escapeHtml(rp ? rp.name : 'someone')}</b> joins the school`);
         break;
       }
       case 'world': {
-        // A client builds the same school from the same number.
+        if (this.isHost) break;
         this.ui.loading(false);
-        this.startGame({
-          seed: msg.seed, nights: msg.nights, diff: msg.diff,
-          night: msg.night, online: true, name: this.myName
-        });
-        this.phase = msg.phase;
-        this.phaseTime = msg.phaseTime;
+        this.pendingWorld = msg.st;
+        this.startGame({ seed: msg.seed, nights: msg.nights, diff: msg.diff, night: msg.st.night, online: true, name: this.myName });
         break;
       }
       case 'pos': {
+        if (!this.isHost) break;
         const rp = this.remotePlayers.get(from);
-        if (rp) {
-          rp.apply(msg.s);
-          rp.carrying = msg.s.tod;
+        if (!rp) break;
+        msg.s.n = rp.name;     // the host decides what a player is called
+        rp.apply(msg.s);
+        if (Array.isArray(msg.nz)) {
+          for (const n of msg.nz.slice(0, 6)) this.emitNoise(+n[0], +n[1], clamp(+n[2], 0, 1.6), 'client');
         }
         break;
       }
       case 'snap': this.applySnapshot(msg); break;
-      case 'chat': this.ui.chat(`<b>${escapeHtml(String(msg.n).slice(0, 12))}:</b> ${escapeHtml(String(msg.m).slice(0, 120))}`); break;
+      case 'chat': {
+        const line = `<b>${escapeHtml(String(msg.n).slice(0, 12))}:</b> ${escapeHtml(String(msg.m).slice(0, 120))}`;
+        this.ui.chat(line);
+        if (this.isHost) this.net.broadcast(msg, from);
+        break;
+      }
       case 'ev': this.applyEvent(msg, from); break;
       case 'act': this.applyAction(msg, from); break;
     }
@@ -1263,116 +1858,208 @@ class Game {
 
   applySnapshot(m) {
     if (this.isHost || !this.running) return;
+
+    const seen = new Set();
     for (const s of m.p) {
       if (s.id === this.net.myId) continue;
+      seen.add(s.id);
       let rp = this.remotePlayers.get(s.id);
       if (!rp) {
         rp = new RemotePlayer(this, s.id, s.n, this.remotePlayers.size + 1);
         this.remotePlayers.set(s.id, rp);
       }
-      rp.name = s.n || rp.name;
       rp.apply(s);
     }
+    for (const [id, rp] of this.remotePlayers) {
+      if (!seen.has(id)) { this.renderer.scene.remove(rp.model); this.remotePlayers.delete(id); }
+    }
+
     if (m.b) {
       this.bob.x = m.b.x; this.bob.z = m.b.z; this.bob.yaw = m.b.y;
       this.bob.state = m.b.s; this.bob.sweep = m.b.w;
-      this.bob.model.visible = true;
-      this.bob.model.position.set(m.b.x, 0, m.b.z);
-      this.bob.model.rotation.y = m.b.y + Math.PI;
-    } else this.bob.model.visible = false;
+    } else this.bob.state = 'off';
 
-    this.grump.x = m.g.x; this.grump.z = m.g.z; this.grump.yaw = m.g.y;
-    this.grump.state = m.g.s;
-    if (m.g.r !== Math.round(this.grump.resent)) this.grump.anger(m.g.r - this.grump.resent, this, 'sync');
-    this.grump.faceModel();
+    const g = this.grump;
+    g.x = m.g.x; g.z = m.g.z; g.yaw = m.g.y; g.state = m.g.s;
+    if (m.g.tn && !g._turned) g.checkSchedule(99);
+    if (!this.dialogueOpen && m.g.r !== Math.round(g.resent)) g.anger(m.g.r - g.resent, this, 'sync');
 
     this.generator.fuel = m.gen.f;
     this.generator.condition = m.gen.c;
     if (!!m.gen.r !== this.generator.running) {
       this.generator.running = !!m.gen.r;
       this.sfx.setGenerator(this.generator.running, this.generator.condition / 100);
-      if (!this.generator.running) { this.sfx.blackout(); this.ui.flash('blackout'); }
       this.applyPower();
     }
 
-    this.toddlers.applySnapshot(m.tod);
-    this.groundItems.applySnapshot(m.it);
+    // Keep the toddler we are carrying in our arms while the host catches up.
+    const mine = this.player.carryingToddler ? this.player.hands.toddler : null;
+    this.toddlers.applySnapshot(m.tod.map(r => r.i === mine ? Object.assign({}, r, { s: 'carried' }) : r));
+
+    // Do not let an item we just picked up reappear before the host hears.
+    for (const [id, until] of this.pendingTakes) if (this.time > until) this.pendingTakes.delete(id);
+    this.groundItems.applySnapshot(m.it.filter(r => !this.pendingTakes.has(r.i)));
+
+    for (const id of m.ms) this.messes.remove(this.messes.list[id]);
+
+    const broken = new Set(m.bf);
+    let changed = false;
+    for (const f of this.school.fixtures) {
+      if (f.portable) continue;
+      const b = broken.has(f.id);
+      if (!!f.broken !== b) { f.broken = b; changed = true; }
+    }
+    if (changed) this.applyPower();
+
+    this.quests.apply(m.q);
+    if (m.eo && !this.escapeOpen) {
+      this.escapeOpen = true;
+      for (const d of this.school.exitDoors) d.locked = false;
+    }
     this.phase = m.ph; this.phaseTime = m.pt; this.night = m.nt;
   }
 
   applyEvent(m, from) {
+    if (!this.running || !this.school) return;
     switch (m.k) {
+      case 'fx': if (!this.isHost) this.playFx(m.f, m.x, m.z, m.e || {}); return;
       case 'search': {
-        const p = this.school.props.find(pp => pp.id === m.id);
+        const p = this.propById.get(m.id);
         if (p) p.searched = true;
-        if (m.by === this.net.myId && m.found) {
-          if (!this.player.give(m.found)) this.ui.toast('No room for it.');
-          else { this.sfx.pickup(); this.ui.toast(`Found: ${itemName(m.found)}`); }
-        }
+        if (!this.isHost && m.by === this.net.myId) this.giveFound(m.found);
         break;
       }
-      case 'mess': { const mm = this.messes.list[m.id]; if (mm && !mm.done) this.messes.clean(mm, this); break; }
+      case 'mess': this.messes.remove(this.messes.list[m.id]); break;
       case 'door': {
         const d = this.school.doors[m.id];
         if (d) { d.open = m.open; d.locked = m.locked; if (d.box) d.box.active = !m.open; }
         break;
       }
-      case 'lights': { const r = this.school.rooms[m.room]; if (r) { r.lightsOn = m.on; this.applyPower(); } break; }
-      case 'breakers': { for (const r of this.school.rooms) r.lightsOn = true; this.applyPower(); break; }
-      case 'gen': { this.applyPower(); break; }
-      case 'phase': {
-        if (this.isHost) break;
-        this.phase = m.phase; this.night = m.night;
-        this.ui.bigLine(m.phase === 'night' ? 'NIGHT ' + m.night : 'DAY ' + m.night);
-        this.sfx[m.phase === 'night' ? 'phaseNight' : 'phaseDay']();
+      case 'lights': {
+        const r = this.school.rooms[m.room];
+        if (r) {
+          r.lightsOn = m.on;
+          this.applyPower();
+          if (this.isHost) this.questEvent('lights', { room: r.type, on: m.on });
+        }
         break;
       }
-      case 'drop': if (!this.isHost) this.groundItems.spawn(m.kind, m.x, m.z, m.id); break;
+      case 'breakers': for (const r of this.school.rooms) r.lightsOn = true; this.applyPower(); break;
+      case 'gen': this.applyPower(); break;
+      case 'light': if (from !== undefined) this.portableLights.place(m.kind, m.x, m.z); break;
+      case 'phase': {
+        if (this.isHost) return;
+        this.phase = m.phase;
+        this.night = m.night;
+        if (m.phase === 'day') {
+          this.applyMods([]);
+          this.messes.spawnForDay(m.night, this.seed);
+          for (const p of this.school.props) { p.searched = false; p.checked = false; }
+          if (m.quests) this.quests.load(m.quests, m.night);
+          if (m.eo) { this.escapeOpen = true; for (const d of this.school.exitDoors) d.locked = false; }
+          if (m.dawn) this.ui.showDawn(m.dawn.title, m.dawn.kicker, m.dawn.lines);
+          this.sfx.phaseDay();
+          this.sfx.setDrone(0);
+        } else {
+          this.applyMods(m.mods || []);
+          if (m.pt) this.phaseTime = m.pt;
+          this.ui.bigLine('NIGHT ' + m.night);
+          this.sfx.phaseNight();
+          for (const id of m.mods || []) this.ui.toast(NIGHT_MODS.find(x => x.id === id).desc);
+        }
+        this.cardKid.resetPhase();
+        return;
+      }
+      // --- messages addressed to this player only
+      case 'hit': if (!this.isHost) this.applyHit(m.src, m.e || {}); return;
+      case 'unhide': if (!this.isHost && this.player.hidden) { this.player.exitHide(this); this.ui.toast('The door is pulled open.'); } return;
+      case 'revive': if (!this.isHost && this.player.downed) { this.player.revive(); this.ui.toast('Someone patted you until you got up.'); } return;
+      case 'fb': if (!this.isHost) { this.ui.toast(m.text); if (m.sound && this.sfx[m.sound]) this.sfx[m.sound](); } return;
+      case 'cardkid': if (!this.isHost) this.cardKid.maybeTrigger(); return;
+      case 'lostitem': if (!this.isHost) { this.player.take(m.kind); this.ui.toast('Someone else got to it first.'); } return;
+      case 'win': if (!this.isHost) this.endRun(true); return;
+      case 'gameover': if (!this.isHost) this.endRun(false); return;
     }
-    if (this.isHost) this.net.broadcast(m, from);
+    // Client-originated world events get passed on to everyone else.
+    if (this.isHost && from !== undefined) this.net.broadcast(m, from);
   }
 
   // Host-side handling of a client's request.
   applyAction(m, from) {
     if (!this.isHost) return;
     const rp = this.remotePlayers.get(from);
+    if (!rp) return;
     switch (m.k) {
       case 'search': {
-        const p = this.school.props.find(pp => pp.id === m.id);
-        if (!p || p.searched) return;
-        const rng = makeRng(hashStr(this.seed + ':' + p.id + ':' + this.night));
-        p.searched = true;
-        const found = rollLoot(p.search, rng, this.night);
-        this.emitNoise(p.x, p.z, 0.4, 'search');
+        const p = this.propById.get(m.id);
+        if (!p) return;
+        if (p.searched) {
+          this.net.sendTo(from, { t: 'ev', k: 'search', id: p.id, found: null, by: from });
+          return;
+        }
+        const found = this.rollSearch(p);
         this.net.broadcast({ t: 'ev', k: 'search', id: p.id, found, by: from });
         break;
       }
       case 'take': {
         const it = this.groundItems.list.find(i => i.id === m.id);
         if (it) this.groundItems.remove(it);
+        else this.net.sendTo(from, { t: 'ev', k: 'lostitem', kind: m.kind });
         break;
       }
-      case 'carry': { const t = this.toddlers.byId(m.id); if (t && rp) { t.state = 'carried'; t.model.visible = false; rp.carrying = m.id; } break; }
+      case 'drop': if (ITEMS[m.kind]) this.groundItems.spawn(m.kind, +m.x, +m.z); break;
+      case 'carry': {
+        const t = this.toddlers.byId(m.id);
+        if (t) { t.state = 'carried'; t.model.visible = false; rp.carrying = m.id; }
+        break;
+      }
       case 'drop_toddler': {
         const t = this.toddlers.byId(m.id);
-        if (t && rp) { rp.carrying = null; this.toddlers.place(t, rp.x, rp.z, this); }
+        rp.carrying = null;
+        if (t) this.toddlers.place(t, +m.x || rp.x, +m.z || rp.z, this, false);
         break;
       }
-      case 'light': this.portableLights.place(m.kind, m.x, m.z); break;
-      case 'downed': if (rp) rp.downed = true; break;
+      case 'feed': { const t = this.toddlers.byId(m.id); if (t) { this.toddlers.feed(t); this.questEvent('fed'); } break; }
+      case 'teddy': { const t = this.toddlers.byId(m.id); if (t) this.toddlers.calm(t); break; }
+      case 'mess': {
+        const mm = this.messes.list[m.id];
+        if (this.messes.remove(mm)) {
+          this.messCleanedByAnyone();
+          this.net.broadcast({ t: 'ev', k: 'mess', id: m.id }, from);
+        }
+        break;
+      }
+      case 'gen': if (['start', 'refuel', 'repair'].includes(m.kind)) this.generator[m.kind](this, from); break;
+      case 'light': {
+        this.portableLights.place(m.kind, +m.x, +m.z);
+        this.net.broadcast({ t: 'ev', k: 'light', kind: m.kind, x: m.x, z: m.z }, from);
+        break;
+      }
+      case 'quest': if (CLIENT_QUEST_EVENTS.has(m.type)) this.questEvent(m.type); break;
+      case 'deliver': if (['hamster', 'crayon', 'holocard'].includes(m.item)) this.handleDeliver(m.item); break;
+      case 'answer': {
+        this.talkedToday = true;
+        if (!this.grump.turned) this.grump.anger(clamp(+m.r || 0, 0, 25), this, 'answer');
+        this.rememberAnswer(m.text);
+        break;
+      }
+      case 'talk': {
+        this.grump.busy = !!m.on;
+        clearTimeout(this.busyTimer);
+        if (m.on) this.busyTimer = setTimeout(() => { this.grump.busy = false; }, 30000);
+        break;
+      }
       case 'revive': {
-        if (m.id === 'host') { this.player.revive(); }
-        else { const r2 = this.remotePlayers.get(m.id); if (r2) r2.downed = false; }
-        this.net.broadcast({ t: 'ev', k: 'revive', id: m.id });
+        if (m.id === 'host') { if (this.player.downed) { this.player.revive(); this.ui.toast(`${rp.name} patted you until you got up.`); } }
+        else {
+          const r2 = this.remotePlayers.get(m.id);
+          if (r2) { r2.downed = false; this.net.sendTo(m.id, { t: 'ev', k: 'revive' }); }
+        }
         break;
       }
-      case 'mess': { const mm = this.messes.list[m.id]; if (mm && !mm.done) { this.messes.clean(mm, this); this.net.broadcast({ t: 'ev', k: 'mess', id: m.id }); } break; }
+      case 'escape': if (this.escapeOpen) this.escape(); break;
     }
   }
-}
-
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
 window.addEventListener('DOMContentLoaded', () => {

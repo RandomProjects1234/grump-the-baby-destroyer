@@ -56,21 +56,24 @@ export class Sfx {
 
   // Returns the clip length in seconds so callers can hold a dialogue beat for
   // exactly as long as Grump is talking. 0 means it did not play.
-  voice(name, gain = 1) {
+  // `rate` below 1 drags the clip slower and lower -- used once Grump has turned.
+  voice(name, gain = 1, rate = 1) {
     const ctx = this.ensure();
-    if (!ctx || !this.voices || !this.voices[name]) return 0;
+    if (!ctx || !this.voices || !this.voices[name] || gain <= 0.01) return 0;
     if (this.speaking && this.speaking.src) {
       try { this.speaking.src.stop(); } catch (e) { /* already finished */ }
     }
     const buf = this.voices[name];
     const src = ctx.createBufferSource();
     src.buffer = buf;
+    src.playbackRate.value = rate;
     const g = ctx.createGain();
     g.gain.value = Math.max(0, gain) * 1.35;
     src.connect(g); g.connect(this.master);
     src.start();
-    this.speaking = { src, until: ctx.currentTime + buf.duration };
-    return buf.duration;
+    const len = buf.duration / rate;
+    this.speaking = { src, until: ctx.currentTime + len };
+    return len;
   }
 
   get isSpeaking() {
@@ -195,6 +198,29 @@ export class Sfx {
     this.tone(120, 0.9, 'square', 0.16, -50, 0.02);
   }
   whisper(a) { this.noise(0.7, 0.05 * a, 1700, 0.8, 'bandpass'); }
+  knock(a) {
+    for (let i = 0; i < 3; i++) {
+      this.noise(0.09, 0.22 * a, 320, 1.2, 'bandpass', i * 0.24);
+      this.tone(95, 0.1, 'sine', 0.2 * a, -20, i * 0.24);
+    }
+  }
+  breath(a) {
+    this.noise(1.1, 0.06 * a, 480, 0.6, 'lowpass');
+    this.noise(0.9, 0.05 * a, 380, 0.6, 'lowpass', 1.3);
+  }
+  thunder() {
+    this.noise(2.6, 0.24, 90, 0.5, 'lowpass');
+    this.noise(1.2, 0.14, 240, 0.4, 'lowpass', 0.12);
+  }
+  bulbPop(a) {
+    this.noise(0.08, 0.3 * a, 3800, 2);
+    this.tone(1800, 0.05, 'square', 0.08 * a, -1200);
+  }
+  jumpscare() {
+    this.noise(1.2, 0.34, 1200, 0.3);
+    this.tone(90, 1.4, 'sawtooth', 0.28, -40);
+    this.tone(1400, 0.6, 'square', 0.14, -1100);
+  }
 
   // ---------------------------------------------------------------- ui
   phaseDay() { [392, 494, 587, 784].forEach((f, i) => this.tone(f, 0.3, 'triangle', 0.1, 0, i * 0.11)); }

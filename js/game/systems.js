@@ -38,73 +38,65 @@ export class Generator {
       + 0.12 * wear
       + 0.012 * messes
       + 0.008 * Math.max(0, litRooms - 4);
-    return raw * (1 + (game.night - 1) * 0.10);
+    // Deep runs keep getting harder, but a 20-night run must stay survivable.
+    return raw * (1 + Math.min(9, game.night - 1) * 0.10);
   }
 
-  start(game) {
+  // `actor` is who did it: 'me' for the local player, or a peer id. The result
+  // is reported back to that player only.
+  start(game, actor = 'me') {
     if (this.running) return false;
     if (!this.canStart) {
-      game.sfx.genFail();
-      game.ui.toast(this.fuel <= 1 ? 'No fuel in it.' : 'Too broken to turn over.');
+      game.feedback(actor, this.fuel <= 1 ? 'No fuel in it.' : 'Too broken to turn over.', 'genFail');
       return false;
     }
-    // A knackered generator does not catch first pull.
     const chance = clamp(0.35 + this.condition / 140, 0.35, 0.98);
     if (Math.random() > chance && this.startFails < 3) {
       this.startFails++;
-      game.sfx.genFail();
+      game.feedback(actor, 'It coughs and dies. Pull again.', 'genFail');
       game.emitNoise(this.x, this.z, 0.7, 'generator');
-      game.ui.toast('It coughs and dies. Pull again.');
       return false;
     }
     this.startFails = 0;
     this.running = true;
-    game.sfx.genStart();
-    game.sfx.setGenerator(true, this.condition / 100);
+    game.fx('genStart', this.x, this.z);
     game.emitNoise(this.x, this.z, 1.0, 'generator');
     game.onPowerChanged(true);
-    if (game.cardKid) game.cardKid.maybeTrigger();
+    game.questEvent('genStart');
+    game.triggerCardKid(actor);
     return true;
   }
 
   stop(game, quiet) {
     if (!this.running) return;
     this.running = false;
-    game.sfx.setGenerator(false, 0);
-    if (!quiet) { game.sfx.blackout(); game.ui.flash('blackout'); }
+    if (!quiet) game.fx('blackout', this.x, this.z);
     game.onPowerChanged(false);
   }
 
-  refuel(game, amount = 38) {
+  refuel(game, actor = 'me', amount = 38) {
     const before = this.fuel;
     this.fuel = clamp(this.fuel + amount, 0, 100);
-    game.sfx.pour();
-    game.player.stats.fuelPoured++;
-    game.score += 30;
-    game.ui.toast(`Fuel ${Math.round(before)}% → ${Math.round(this.fuel)}%`);
-    if (game.cardKid) game.cardKid.maybeTrigger();
+    game.feedback(actor, `Fuel ${Math.round(before)}% -> ${Math.round(this.fuel)}%`, 'pour');
+    game.questEvent('refuel');
+    game.triggerCardKid(actor);
   }
 
-  repair(game, amount = 26) {
+  repair(game, actor = 'me', amount = 26) {
     const before = this.condition;
     this.condition = clamp(this.condition + amount, 0, 100);
-    game.sfx.wrench();
-    game.player.stats.repairs++;
-    game.score += 25;
-    game.ui.toast(`Condition ${Math.round(before)}% → ${Math.round(this.condition)}%`);
-    if (game.cardKid) game.cardKid.maybeTrigger();
+    game.feedback(actor, `Condition ${Math.round(before)}% -> ${Math.round(this.condition)}%`, 'wrench');
+    game.questEvent('repair');
+    game.triggerCardKid(actor);
   }
 
   update(dt, game) {
     if (!this.running) return;
     this.fuel = clamp(this.fuel - this.burnRate(game) * dt, 0, 100);
-    this.condition = clamp(this.condition - dt * 0.35, 0, 100);
-    game.sfx.setGenerator(true, this.condition / 100);
-    const d = dist2(game.player.x, game.player.z, this.x, this.z);
-    game.sfx.setGeneratorProximity(clamp(1 - d / 26, 0, 1));
+    this.condition = clamp(this.condition - dt * 0.35 * (game.mods.storm ? 2 : 1), 0, 100);
 
     if (this.fuel <= 0) {
-      game.ui.bigLine('THE LIGHTS GO OUT');
+      game.fx('big', 0, 0, { text: 'THE LIGHTS GO OUT' });
       this.stop(game);
       return;
     }
@@ -113,17 +105,14 @@ export class Generator {
       this.sputterT -= dt * (1 + (42 - this.condition) / 30);
       if (this.sputterT <= 0) {
         this.sputterT = 22 + Math.random() * 26;
-        game.sfx.genFail();
-        game.ui.bigLine('THE GENERATOR STALLS');
+        game.fx('big', 0, 0, { text: 'THE GENERATOR STALLS' });
         this.stop(game);
       }
     }
-    // Warnings you can act on.
     const secondsLeft = this.fuel / this.burnRate(game);
     if (secondsLeft < 30 && !this._warned) {
       this._warned = true;
-      game.ui.toast('The generator is running dry.');
-      game.sfx.genFail();
+      game.fx('toast', 0, 0, { text: 'The generator is running dry.' });
     }
     if (secondsLeft > 45) this._warned = false;
   }
@@ -203,16 +192,13 @@ export class Messes {
     return best;
   }
 
-  clean(m, game) {
-    if (m.done) return;
+  // Just removes it. Rewards are the game's business, because only the player
+  // who actually cleaned it should get them.
+  remove(m) {
+    if (!m || m.done) return false;
     m.done = true;
     this.group.remove(m.mesh);
-    game.sfx.clean();
-    game.player.stats.cleaned++;
-    game.score += 35;
-    // Tidying is the one thing that reliably takes the edge off him.
-    game.grump.anger(-1.5, game, 'tidy');
-    game.ui.toast(`Cleaned up ${m.label}. (${this.remaining} left)`);
+    return true;
   }
 
   applySnapshot(rows) {
