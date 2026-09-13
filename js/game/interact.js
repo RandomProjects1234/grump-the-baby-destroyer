@@ -60,10 +60,16 @@ export function findInteraction(game) {
   // Whatever you are already holding E on stays the target, so a toddler or
   // Grump wandering through your view does not restart the search bar.
   const holding = game.holdKey;
+  // With a toddler in your arms, only things marked carryOk (doors, light
+  // switches) can be used -- everything else waits until you put them down.
+  const carrying = p.carryingToddler;
   const consider = (x, z, make, weight = 1, key = null, raw = null) => {
     let s = (raw === null ? score(game, x, z) : raw) * weight;
     if (key && key === holding && s > 0) s += 10;
-    if (s > bestScore) { const o = make(); if (o) { if (key) o.key = key; bestScore = s; best = o; } }
+    if (s > bestScore) {
+      const o = make();
+      if (o && !(carrying && !o.carryOk)) { if (key) o.key = key; bestScore = s; best = o; }
+    }
   };
 
   // --- quest deliveries that work anywhere in the right room
@@ -98,10 +104,11 @@ export function findInteraction(game) {
     }, t.state === 'safe' ? 0.55 : 1, null, smallScore(game, t.x, t.z, 0.35));
   }
 
-  // --- put a carried toddler down
-  if (p.carryingToddler) {
+  // --- put a carried toddler down (offered at the end, see below)
+  let putDown = null;
+  if (carrying) {
     const inHome = game.school.roomAt(p.x, p.z) === game.school.home;
-    return {
+    putDown = {
       label: inHome ? 'Put them down (safe)' : 'Put them down',
       hint: inHome ? '' : 'They are only safe in your classroom.',
       hold: 0.3,
@@ -155,14 +162,14 @@ export function findInteraction(game) {
     if (dist2(p.x, p.z, d.x, d.z) > REACH + 0.4) continue;
     consider(d.x, d.z, () => {
       if (d.exit) {
-        if (game.escapeOpen) return { label: 'LEAVE', hint: 'Go home.', hold: 2.0, act: () => game.escape() };
+        if (game.escapeOpen) return { label: 'LEAVE', hint: 'Go home.', hold: 2.0, carryOk: true, act: () => game.escape() };
         return { label: 'The front doors', hint: 'Chained from the outside.', hold: 0, act: () => { game.sfx.deny(); game.ui.toast('Chained. Something rattles on the far side.'); } };
       }
       if (d.locked) {
         if (p.hasItem('key')) return { label: 'Unlock', hold: 1.0, act: () => { p.take('key'); d.locked = false; game.toggleDoor(d, true); game.ui.toast('Unlocked.'); } };
         return { label: 'Locked', hint: 'A staff key would open it.', hold: 0, act: () => { game.sfx.deny(); game.emitNoise(d.x, d.z, 0.4); } };
       }
-      return { label: d.open ? 'Close the door' : 'Open the door', hold: 0, act: () => game.toggleDoor(d, !d.open) };
+      return { label: d.open ? 'Close the door' : 'Open the door', hold: 0, carryOk: true, act: () => game.toggleDoor(d, !d.open) };
     });
   }
 
@@ -173,7 +180,7 @@ export function findInteraction(game) {
       return {
         label: on ? `Lights off · ${sw.room.name}` : `Lights on · ${sw.room.name}`,
         hint: game.generator.running ? '' : 'No power right now -- they will come on when the generator does.',
-        hold: 0, act: () => game.setRoomLights(sw.room, !on, 'player')
+        hold: 0, carryOk: true, act: () => game.setRoomLights(sw.room, !on, 'player')
       };
     });
   }
@@ -282,6 +289,15 @@ export function findInteraction(game) {
       hold: 3.0,
       act: () => game.requestRevive(rp)
     }));
+  }
+
+  if (carrying) {
+    // Looking at a door or a switch: use it, and R still puts them down.
+    if (best) {
+      best.extra = { label: putDown.label, key: 'R', hold: 0, act: putDown.act };
+      return best;
+    }
+    return putDown;
   }
 
   if (best && bestHide && !best.extra && !best.isHide) {
