@@ -12,10 +12,10 @@
 // Who is dangerous when: the nights belong to Bob. Grump only watches until day
 // 4, and after that he hunts you in daylight as well as the dark.
 import * as THREE from 'three';
-import { Walker, canSee } from './nav.js?v=2026-09-13c';
-import { makeBob, makeGrump, setGrumpStage, animateWalk, poseCarry } from '../render/models.js?v=2026-09-13c';
-import { clamp, approachAngle, dist2, lerp } from '../util/util.js?v=2026-09-13c';
-import { AMBIENT } from './dialogue.js?v=2026-09-13c';
+import { Walker, canSee } from './nav.js?v=2026-09-13d';
+import { makeBob, makeGrump, setGrumpStage, animateWalk, poseCarry } from '../render/models.js?v=2026-09-13d';
+import { clamp, approachAngle, dist2, lerp } from '../util/util.js?v=2026-09-13d';
+import { AMBIENT } from './dialogue.js?v=2026-09-13d';
 
 // A room this bright counts as "lit", and neither threat behaves the same in it.
 export const LIT = 0.55;

@@ -8,9 +8,9 @@
 // can fight, hide from or outrun; it is only ever a thing you watch happen.
 // This is a local encounter, not a networked one: everybody gets their own.
 import * as THREE from 'three';
-import { makeCardKid, makeTaker, animateWalk } from '../render/models.js?v=2026-09-13c';
-import { Walker } from './nav.js?v=2026-09-13c';
-import { clamp, dist2, approachAngle } from '../util/util.js?v=2026-09-13c';
+import { makeCardKid, makeTaker, animateWalk } from '../render/models.js?v=2026-09-13d';
+import { Walker } from './nav.js?v=2026-09-13d';
+import { clamp, dist2, approachAngle } from '../util/util.js?v=2026-09-13d';
 
 const SUBS = [
   'A boy you have not seen before holds up a fan of cards.',

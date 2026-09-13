@@ -220,6 +220,17 @@ js/
   It stamps every module import with `?v=<version>` so browsers never mix cached old
   files with new ones, and co-op refuses to join players on different versions
   (different code builds a different school, so doors would not line up).
+- **Interaction:** every interactable has a shape; a line from your eyes along the
+  crosshair picks the nearest one it passes through within 2.5m. Walls and closed
+  doors stop the line (judged against furniture's real size, so nothing works
+  through a wall). Looking down picks small things at your feet. Only when the
+  line hits nothing is there a narrow fallback cone.
+- **Doors:** walking into an unlocked door pushes it open; doors refuse to close on
+  anyone standing in them; the host validates joiners' door changes and door/light
+  state rides in every snapshot.
+- **Co-op connections:** one body per device (a random id in localStorage; the host
+  keeps only the newest connection per id and refuses its own). The world is only
+  sent after a joiner's hello passes those checks.
 - **AI:** `nav.js` is 8-direction A* that never cuts wall corners, with per-walker
   cost functions (Bob treats lit rooms as walls) and a penalty for squeezing past
   furniture; walkers smooth their paths by heading for the furthest waypoint they

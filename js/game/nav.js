@@ -12,7 +12,7 @@
 // staircases into straight lines. When something is in the way it slides
 // around it, and when it is properly stuck it throws the path away and
 // thinks again; if that fails too it frees itself.
-import { clamp } from '../util/util.js?v=2026-09-13c';
+import { clamp } from '../util/util.js?v=2026-09-13d';
 
 const SQRT2 = Math.SQRT2;
 

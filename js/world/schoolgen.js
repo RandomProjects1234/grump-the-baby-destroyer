@@ -3,7 +3,7 @@
 // Everything here is a pure function of the seed. Multiplayer never sends
 // geometry -- the host sends one number and every client rebuilds the same
 // building from it, right down to which locker holds the wrench.
-import { makeRng } from '../util/util.js?v=2026-09-13c';
+import { makeRng } from '../util/util.js?v=2026-09-13d';
 
 export const CELL = 2.4;         // metres per grid cell
 export const WALL_H = 3.0;       // standard ceiling height
@@ -267,7 +267,10 @@ export function generateSchool(seed) {
   function shellHeight(id) { return Math.max(3.4, heightOf(id) + 0.5); }
 
   function pushSeg(dir, gx, gy, aId, bId, windowed) {
-    const outerA = aId < 0, outerB = bId < 0;
+    // The playground is outdoors: from out there, a wall is the outside of
+    // the building, so it gets an exterior face just like the edge of the map.
+    const outdoor = id => id >= 0 && rooms[id].outdoor;
+    const outerA = aId < 0 || (outdoor(aId) && !outdoor(bId)), outerB = bId < 0 || (outdoor(bId) && !outdoor(aId));
     const exterior = outerA || outerB;
     const inId = outerA ? bId : aId;
     const hIn = exterior ? shellHeight(inId) : 0;

@@ -1,7 +1,7 @@
 // The other children left behind. Finding them is optional; keeping them is
 // what the score is actually made of.
-import { makeToddler, animateWalk } from '../render/models.js?v=2026-09-13c';
-import { clamp, dist2, makeRng } from '../util/util.js?v=2026-09-13c';
+import { makeToddler, animateWalk } from '../render/models.js?v=2026-09-13d';
+import { clamp, dist2, makeRng } from '../util/util.js?v=2026-09-13d';
 
 const NAMES = ['Pip', 'Moo', 'Bibi', 'Tog', 'Nell', 'Dot', 'Wex', 'Bun', 'Cricket', 'Snib'];
 

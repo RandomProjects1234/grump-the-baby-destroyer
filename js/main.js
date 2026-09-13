@@ -12,34 +12,47 @@
 //   * Anything that should be SEEN or HEARD goes through fx(), which plays it
 //     locally and on every client, attenuated by each player's own position.
 import * as THREE from 'three';
-import { Renderer } from './render/renderer.js?v=2026-09-13c';
-import { initTextures } from './render/textures.js?v=2026-09-13c';
-import { buildSchool, materialFor, resetMaterials } from './world/build.js?v=2026-09-13c';
-import { generateSchool } from './world/schoolgen.js?v=2026-09-13c';
-import { buildCollider, computeNavBlocking, repairConnectivity } from './game/collide.js?v=2026-09-13c';
-import { Nav } from './game/nav.js?v=2026-09-13c';
-import { Player } from './game/player.js?v=2026-09-13c';
-import { Bob, Grump } from './game/threats.js?v=2026-09-13c';
-import { Toddlers } from './game/toddlers.js?v=2026-09-13c';
-import { Generator, Messes, GroundItems, PortableLights } from './game/systems.js?v=2026-09-13c';
-import { findInteraction, useSelected, dropHands } from './game/interact.js?v=2026-09-13c';
-import { CardKid } from './game/cardkid.js?v=2026-09-13c';
-import { Honeywell } from './game/honeywell.js?v=2026-09-13c';
-import { Bullies } from './game/bullies.js?v=2026-09-13c';
-import { Jerry } from './game/jerry.js?v=2026-09-13c';
-import { Meredith } from './game/meredith.js?v=2026-09-13c';
-import { Minigames } from './ui/minigames.js?v=2026-09-13c';
-import { Quests } from './game/quests.js?v=2026-09-13c';
-import { rollLoot, DRAWINGS, ITEMS, itemName, isBig, lunchboxContents } from './game/items.js?v=2026-09-13c';
-import { pickQuestion } from './game/dialogue.js?v=2026-09-13c';
-import { makeBaby, makeGrump, setGrumpStage, animateWalk, BABY_COLORS, OUTFIT_COLORS } from './render/models.js?v=2026-09-13c';
-import { Sfx } from './audio/sfx.js?v=2026-09-13c';
-import { UI } from './ui/ui.js?v=2026-09-13c';
-import { MapView } from './ui/map.js?v=2026-09-13c';
-import { Net } from './net/net.js?v=2026-09-13c';
-import { clamp, lerp, dist2, makeRng, hashStr, fmtTime } from './util/util.js?v=2026-09-13c';
+import { Renderer } from './render/renderer.js?v=2026-09-13d';
+import { initTextures } from './render/textures.js?v=2026-09-13d';
+import { buildSchool, materialFor, resetMaterials } from './world/build.js?v=2026-09-13d';
+import { generateSchool } from './world/schoolgen.js?v=2026-09-13d';
+import { buildCollider, computeNavBlocking, repairConnectivity } from './game/collide.js?v=2026-09-13d';
+import { Nav } from './game/nav.js?v=2026-09-13d';
+import { Player } from './game/player.js?v=2026-09-13d';
+import { Bob, Grump } from './game/threats.js?v=2026-09-13d';
+import { Toddlers } from './game/toddlers.js?v=2026-09-13d';
+import { Generator, Messes, GroundItems, PortableLights } from './game/systems.js?v=2026-09-13d';
+import { findInteraction, useSelected, dropHands } from './game/interact.js?v=2026-09-13d';
+import { CardKid } from './game/cardkid.js?v=2026-09-13d';
+import { Honeywell } from './game/honeywell.js?v=2026-09-13d';
+import { Bullies } from './game/bullies.js?v=2026-09-13d';
+import { Jerry } from './game/jerry.js?v=2026-09-13d';
+import { Meredith } from './game/meredith.js?v=2026-09-13d';
+import { Minigames } from './ui/minigames.js?v=2026-09-13d';
+import { Quests } from './game/quests.js?v=2026-09-13d';
+import { rollLoot, DRAWINGS, ITEMS, itemName, isBig, lunchboxContents } from './game/items.js?v=2026-09-13d';
+import { pickQuestion } from './game/dialogue.js?v=2026-09-13d';
+import { makeBaby, makeGrump, setGrumpStage, animateWalk, BABY_COLORS, OUTFIT_COLORS } from './render/models.js?v=2026-09-13d';
+import { Sfx } from './audio/sfx.js?v=2026-09-13d';
+import { UI } from './ui/ui.js?v=2026-09-13d';
+import { MapView } from './ui/map.js?v=2026-09-13d';
+import { Net } from './net/net.js?v=2026-09-13d';
+import { clamp, lerp, dist2, makeRng, hashStr, fmtTime } from './util/util.js?v=2026-09-13d';
 
 const SET_KEY = 'grump.settings.v1';
+
+// One body per device. Every browser gets a random id the first time it runs
+// the game; the host allows each id in a room once. (?device=name overrides it,
+// for testing two players on one computer.)
+const DEVICE_ID = (() => {
+  const forced = new URLSearchParams(location.search).get('device');
+  if (forced) return 'dev-' + forced.slice(0, 24);
+  try {
+    let id = localStorage.getItem('grump.device');
+    if (!id) { id = 'dev-' + Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem('grump.device', id); }
+    return id;
+  } catch (e) { return 'dev-' + Math.random().toString(36).slice(2); }
+})();
 const $ = s => document.querySelector(s);
 
 const DIFF = {
@@ -62,7 +75,7 @@ const NIGHT_MODS = [
 // Bump on every release that changes the school layout or the network
 // messages. Players on different versions build different schools (door and
 // prop numbers stop matching), so co-op refuses to mix them.
-export const GAME_VERSION = '2026-09-13c';
+export const GAME_VERSION = '2026-09-13d';
 
 const CLIENT_QUEST_EVENTS = new Set(['eat', 'hide', 'drawing', 'lunch', 'gym']);
 
@@ -422,6 +435,8 @@ class Game {
   }
 
   doJoin() {
+    // A second click (or Enter and a click) must not open a second connection.
+    if (this.joining || (this.net.online && !this.net.isHost)) return;
     const code = $('#join-code').value.trim().toUpperCase();
     const name = ($('#join-name').value || 'Baby').slice(0, 12);
     if (code.length < 4) { $('#join-err').textContent = 'That code looks short.'; return; }
@@ -429,12 +444,15 @@ class Game {
     localStorage.setItem(SET_KEY, JSON.stringify(this.settings));
     $('#join-err').textContent = '';
     $('#join-go').disabled = true;
+    this.joining = true;
     this.ui.loading(true, 'Knocking…');
     this.net.join(code, () => {
+      this.joining = false;
       this.myName = name;
-      this.net.send({ t: 'hello', name, v: GAME_VERSION });
+      this.net.send({ t: 'hello', name, v: GAME_VERSION, dev: DEVICE_ID });
       this.ui.loading(true, 'Waiting for the host to start…');
     }, err => {
+      this.joining = false;
       this.ui.loading(false);
       $('#join-err').textContent = err;
       $('#join-go').disabled = false;
@@ -463,7 +481,10 @@ class Game {
     this.dialogueOpen = false;
     this.paused = false;
 
+    // A quit (or being kicked) before the build runs cancels it.
+    const token = this.startToken = (this.startToken || 0) + 1;
     setTimeout(() => {
+      if (token !== this.startToken) return;
       this.buildWorld(this.seed);
       this.night = opts.night || 1;
       this.phase = 'day';
@@ -479,7 +500,8 @@ class Game {
 
       if (this.isHost) {
         this.beginDay(true);
-        if (this.online) this.net.broadcast(this.worldMessage());
+        // only to players who have said hello and passed the checks
+        if (this.online) for (const rp of this.remotePlayers.values()) if (rp.greeted) this.net.sendTo(rp.id, this.worldMessage());
       } else if (this.pendingWorld) {
         this.applyWorldState(this.pendingWorld);
         this.pendingWorld = null;
@@ -609,6 +631,7 @@ class Game {
 
   quitToMenu() {
     this.running = false;
+    this.startToken = (this.startToken || 0) + 1;
     this.net.close();
     for (const rp of this.remotePlayers.values()) this.renderer.scene.remove(rp.model);
     this.remotePlayers.clear();
@@ -722,7 +745,21 @@ class Game {
       this.fx('big', 0, 0, { text: takenNames.join(' and ') + '\nis not here any more', stinger: true });
     }
 
-    for (const d of this.school.doors) if (d.yard) { d.locked = true; this.toggleDoor(d, false, true); }
+    for (const d of this.school.doors) {
+      if (!d.yard) continue;
+      d.locked = true;
+      d.open = false;
+      if (d.box) d.box.active = true;
+      this.netEvent({ k: 'door', id: d.id, open: false, locked: true });
+    }
+    // anybody standing in a playground doorway as it locks is moved inside
+    for (const d of this.school.yardDoors) {
+      const p = this.player;
+      if (d.box && Math.abs(p.x - d.box.x) < d.box.hw + 0.26 && Math.abs(p.z - d.box.z) < d.box.hd + 0.26) {
+        const spot = this.collider.nearestFree(p.x, p.z, 0.26, 2.5);
+        if (spot) { p.x = spot[0]; p.z = spot[1]; }
+      }
+    }
 
     const modIds = this.pickMods(this.night);
     this.applyMods(modIds);
@@ -857,7 +894,7 @@ class Game {
     }
 
     this.player.update(dt, this.input, this);
-    if (!blocked && !inScene) this.handleInteraction(dt);
+    if (!blocked && !inScene) { this.handleInteraction(dt); this.pushDoors(dt); }
     else this.ui.setPrompt(null);
 
     if (this.isHost) {
@@ -1121,12 +1158,8 @@ class Game {
   // ================================================================= actions
 
   handleInteraction(dt) {
-    if (this.cardKid && this.cardKid.speaking) {
-      this.holdT = 0;
-      this.lastInteraction = null;
-      this.ui.setPrompt({ label: 'You cannot say anything', hint: 'You are a baby. He does not mind.', key: '—', hold: 0 }, 0);
-      return;
-    }
+    // (The card boy talking used to block every interaction for several
+    // seconds -- doors included. He talks; you can still do things.)
     // Keep the thing you are holding E on as the target until you let go.
     this.holdKey = this.input.interact && this.holdT > 0 ? this.holdKeyLast : null;
     const inter = findInteraction(this);
@@ -1358,8 +1391,19 @@ class Game {
   }
 
   // --- doors and lights
-  toggleDoor(d, open, silent) {
-    if (d.locked && open) { this.sfx.deny(); return; }
+  // --- doors
+  //
+  // One place changes a door. It refuses to open a locked door, refuses to
+  // shut a door on anybody standing in the doorway (the old way of getting
+  // stuck inside a wall), remembers when we touched it so the host's next
+  // snapshot does not undo our press, and tells everyone.
+  toggleDoor(d, open, silent, by) {
+    if (!d || d.exit && !this.escapeOpen && open) { this.sfx.deny(); return false; }
+    if (d.locked && open) { this.sfx.deny(); return false; }
+    if (!open && d.open && this.somethingInDoorway(d)) {
+      if (by === 'player') { this.ui.toast('Something is in the way of the door.'); this.sfx.deny(); }
+      return false;
+    }
     d.touchT = this.time;
     d.open = open;
     if (d.box) d.box.active = !open;
@@ -1368,11 +1412,70 @@ class Game {
       this.emitNoise(d.x, d.z, 0.4, 'door');
     }
     this.netEvent({ k: 'door', id: d.id, open, locked: d.locked });
+    return true;
+  }
+
+  // Tell one joiner the real state of a door they tried to change.
+  sendDoorState(d, to) {
+    this.net.sendTo(to, { t: 'ev', k: 'door', id: d.id, open: d.open, locked: d.locked, ack: 1 });
+  }
+
+  unlockDoor(d) {
+    const p = this.player;
+    if (!d.locked) { this.toggleDoor(d, true, false, 'player'); return; }
+    if (!p.take('key')) { this.ui.toast('You need a staff key.'); this.sfx.deny(); return; }
+    d.locked = false;
+    d.touchT = this.time;
+    this.toggleDoor(d, true, false, 'player');
+    this.ui.toast('Unlocked. The key stays in the lock.');
+  }
+
+  // Anyone (you, a friend, a toddler, Bob, Grump) standing where the door
+  // would swing shut?
+  somethingInDoorway(d) {
+    const b = d.box;
+    if (!b) return false;
+    const inside = (x, z, r) => Math.abs(x - b.x) < b.hw + r && Math.abs(z - b.z) < b.hd + r;
+    if (!this.player.dead && inside(this.player.x, this.player.z, 0.26)) return true;
+    for (const rp of this.remotePlayers.values()) if (!rp.dead && inside(rp.x, rp.z, 0.26)) return true;
+    for (const t of this.toddlers.list) if (t.state !== 'carried' && t.state !== 'taken' && inside(t.x, t.z, 0.2)) return true;
+    if (this.bob && this.bob.active && inside(this.bob.x, this.bob.z, 0.36)) return true;
+    if (this.grump && inside(this.grump.x, this.grump.z, 0.36)) return true;
+    return false;
+  }
+
+  // Walking into a closed door that is not locked pushes it open -- nobody
+  // should ever be stuck in front of a door because a prompt did not show.
+  pushDoors(dt) {
+    const p = this.player;
+    if (p.dead || p.hidden || p.busy) { this.pushT = 0; return; }
+    const i = this.input;
+    if (!i.fwd && !i.right) { this.pushT = 0; return; }
+    const sinY = Math.sin(p.yaw), cosY = Math.cos(p.yaw);
+    let mx = i.right * cosY - i.fwd * sinY, mz = -i.right * sinY - i.fwd * cosY;
+    const l = Math.hypot(mx, mz) || 1; mx /= l; mz /= l;
+    let pushing = null;
+    for (const d of this.school.doors) {
+      if (d.open || d.locked || d.exit || !d.box) continue;
+      const b = d.box;
+      // the point just ahead of us is inside the door's box
+      const ax = p.x + mx * 0.45, az = p.z + mz * 0.45;
+      if (Math.abs(ax - b.x) < b.hw + 0.05 && Math.abs(az - b.z) < b.hd + 0.3) {
+        // and we are heading into it, not along it
+        const towards = d.dir === 'w' ? Math.abs(mx) > 0.5 : Math.abs(mz) > 0.5;
+        if (towards) { pushing = d; break; }
+      }
+    }
+    if (!pushing) { this.pushT = 0; return; }
+    this.pushT = (this.pushT || 0) + dt;
+    if (this.pushT > 0.18) { this.pushT = 0; this.toggleDoor(pushing, true, false, 'player'); }
   }
 
   aiOpenDoor(d) {
-    if (d.open || d.locked) return;
+    if (!this.isHost) return;                    // only the host's AI moves doors
+    if (d.open || d.locked || d.exit) return;
     d.open = true;
+    d.touchT = this.time;
     if (d.box) d.box.active = false;
     if (dist2(d.x, d.z, this.player.x, this.player.z) < 24) this.sfx.doorMove(true);
     this.netEvent({ k: 'door', id: d.id, open: true, locked: d.locked });
@@ -1909,7 +2012,8 @@ class Game {
       const rp = new RemotePlayer(this, id, 'Baby', this.remotePlayers.size + 1);
       this.remotePlayers.set(id, rp);
     }
-    if (this.running) this.net.sendTo(id, this.worldMessage());
+    // The world is sent once they have said hello (see 'hello'), so a
+    // duplicate or rejected connection never starts building a school.
   }
 
   onPeerLeave(id) {
@@ -1922,8 +2026,26 @@ class Game {
   }
 
   onHostGone() {
+    if (this.kicked) return;
     this.ui.toast('The host closed the room.');
     this.quitToMenu();
+  }
+
+  // Host: remove a connection and its body for good.
+  kick(id, why) {
+    this.net.sendTo(id, { t: 'kick', why });
+    const c = this.net.conns.get(id);
+    setTimeout(() => { try { if (c) c.close(); } catch (e) { /* gone */ } }, 300);
+    this.net.conns.delete(id);
+    const rp = this.remotePlayers.get(id);
+    if (rp) {
+      if (rp.carrying !== null && rp.carrying !== undefined) {
+        const t = this.toddlers.byId(rp.carrying);
+        if (t) this.toddlers.place(t, rp.x, rp.z, this, false);
+      }
+      this.renderer.scene.remove(rp.model);
+      this.remotePlayers.delete(id);
+    }
   }
 
   sendChat() {
@@ -1940,6 +2062,22 @@ class Game {
     switch (msg.t) {
       case 'hello': {
         const rp = this.remotePlayers.get(from);
+        if (this.isHost) {
+          const dev = String(msg.dev || '');
+          // the host's own device, joining its own room
+          if (dev && dev === DEVICE_ID) { this.kick(from, 'You are already the host of this room on this device.'); return; }
+          // the same device joined twice (two tabs, a double click): keep the
+          // newest connection, drop the old body completely
+          if (dev) {
+            for (const [id, other] of this.remotePlayers) {
+              if (id !== from && other.dev === dev) this.kick(id, 'You joined this room again from another tab or window, so this one was closed.');
+            }
+          }
+          if (rp) {
+            rp.dev = dev;
+            if (!rp.greeted) { rp.greeted = true; if (this.running) this.net.sendTo(from, this.worldMessage()); }
+          }
+        }
         if (rp) { rp.name = String(msg.name || 'Baby').slice(0, 12); rp.setName(rp.name); }
         this.ui.chat(`<b>${escapeHtml(rp ? rp.name : 'someone')}</b> joins the school`);
         if (this.isHost && msg.v !== GAME_VERSION) {
@@ -1948,8 +2086,23 @@ class Game {
         }
         break;
       }
+      case 'kick': {
+        if (this.isHost) break;
+        this.kicked = true;
+        this.quitToMenu();
+        this.net.close();
+        setTimeout(() => {
+          this.ui.screen('joinscreen');
+          $('#join-err').textContent = String(msg.why || 'The host closed this connection.');
+          $('#join-go').disabled = false;
+          this.kicked = false;
+        }, 300);
+        break;
+      }
       case 'world': {
         if (this.isHost) break;
+        // the same world twice (a duplicate message): just refresh the state
+        if (this.running && this.seed === msg.seed && msg.v === GAME_VERSION) { this.applyWorldState(msg.st); break; }
         if (msg.v !== GAME_VERSION) {
           // Different code builds a different school: doors, lockers and
           // messes would not line up. Say so instead of playing broken.
@@ -2091,7 +2244,27 @@ class Game {
       case 'mess': this.messes.remove(this.messes.list[m.id]); break;
       case 'door': {
         const d = this.school.doors[m.id];
-        if (d) { d.open = m.open; d.locked = m.locked; if (d.box) d.box.active = !m.open; }
+        if (!d) return;
+        if (this.isHost && from !== undefined) {
+          // A joiner asked. The host decides: a door only unlocks if it was
+          // unlocked by a key (the joiner spent it), exits stay chained until
+          // the run is won, and nothing shuts on someone standing in it.
+          if (d.exit && !this.escapeOpen) { this.sendDoorState(d, from); return; }
+          if (d.locked && !m.locked) d.locked = false;
+          if (m.open && d.locked) { this.sendDoorState(d, from); return; }
+          if (!m.open && d.open && this.somethingInDoorway(d)) { this.sendDoorState(d, from); return; }
+          d.open = !!m.open;
+          d.touchT = this.time;
+          if (d.box) d.box.active = !d.open;
+          this.net.broadcast({ t: 'ev', k: 'door', id: d.id, open: d.open, locked: d.locked }, from);
+          return;
+        }
+        if (d.touchT && this.time - d.touchT < 0.4 && from === undefined && !this.isHost && m.ack === undefined) {
+          // our own press is newer than this echo
+        }
+        d.open = !!m.open; d.locked = !!m.locked;
+        if (d.box) d.box.active = !d.open;
+        if (m.ack) d.touchT = 0;
         break;
       }
       case 'lights': {
@@ -2104,7 +2277,13 @@ class Game {
         break;
       }
       case 'breakers': for (const r of this.school.rooms) r.lightsOn = true; this.applyPower(); break;
-      case 'gen': this.applyPower(); break;
+      case 'gen':
+        if (!this.isHost && typeof m.on === 'boolean' && this.generator.running !== m.on) {
+          this.generator.running = m.on;
+          this.sfx.setGenerator(m.on, this.generator.condition / 100);
+        }
+        this.applyPower();
+        break;
       case 'light': if (from !== undefined) this.portableLights.place(m.kind, m.x, m.z); break;
       case 'phase': {
         if (this.isHost) return;

@@ -54,9 +54,15 @@ export class Net {
 
   accept(conn) {
     conn.on('open', () => {
+      // the same peer connecting twice: keep only the new connection
+      const old = this.conns.get(conn.peer);
+      if (old && old !== conn) { try { old.close(); } catch (e) { /* gone */ } }
       this.conns.set(conn.peer, conn);
       conn.on('data', d => this.game.onNetMessage(d, conn.peer));
-      const bye = () => { this.conns.delete(conn.peer); this.game.onPeerLeave(conn.peer); };
+      const bye = () => {
+        if (this.conns.get(conn.peer) !== conn) return;   // replaced or kicked already
+        this.conns.delete(conn.peer); this.game.onPeerLeave(conn.peer);
+      };
       conn.on('close', bye);
       conn.on('error', bye);
       this.game.onPeerJoin(conn.peer);
@@ -65,6 +71,9 @@ export class Net {
 
   join(code, onReady, onError) {
     if (typeof Peer === 'undefined') { onError('PeerJS did not load. Check your connection.'); return; }
+    // never two connections from one page
+    if (this.peer) { try { this.peer.destroy(); } catch (e) { /* old one */ } }
+    if (this.hostConn) { try { this.hostConn.close(); } catch (e) { /* old one */ } this.hostConn = null; }
     const peer = new Peer({ debug: 0 });
     this.peer = peer;
     let opened = false;

@@ -70,16 +70,33 @@ export class MeshBuilder {
   }
 
   // Cheap n-sided prism, used for pipes, poles, tree trunks and drums.
-  cylinder(mat, cx, cy, cz, r, h, sides = 8, capTop = true) {
+  // Sides face outward and the top/bottom caps face up/down. (The old version
+  // wound its sides inward and built caps with a zero normal, which is why
+  // tree canopies and bins rendered black.)
+  cylinder(mat, cx, cy, cz, r, h, sides = 8, capTop = true, capBottom = true) {
     const step = Math.PI * 2 / sides;
     for (let i = 0; i < sides; i++) {
       const a0 = i * step, a1 = (i + 1) * step;
       const x0 = cx + Math.cos(a0) * r, z0 = cz + Math.sin(a0) * r;
       const x1 = cx + Math.cos(a1) * r, z1 = cz + Math.sin(a1) * r;
-      this.quad(mat, [x0, cy, z0], [x1, cy, z1], [x1, cy + h, z1], [x0, cy + h, z0], r * 1.6, r * 1.6);
-      if (capTop) {
-        this.quad(mat, [cx, cy + h, cz], [x0, cy + h, z0], [x1, cy + h, z1], [cx, cy + h, cz], r * 2, r * 2);
-      }
+      this.quad(mat, [x1, cy, z1], [x0, cy, z0], [x0, cy + h, z0], [x1, cy + h, z1], r * 1.6, r * 1.6);
+      if (capTop) this.tri(mat, [cx, cy + h, cz], [x1, cy + h, z1], [x0, cy + h, z0], r * 2);
+      if (capBottom && cy > 0.01) this.tri(mat, [cx, cy, cz], [x0, cy, z0], [x1, cy, z1], r * 2);
+    }
+  }
+
+  // One triangle; the normal comes from its winding (counter-clockwise = front).
+  tri(mat, p1, p2, p3, uvScale = 2.4) {
+    const g = this.group(mat);
+    const ax = p2[0] - p1[0], ay = p2[1] - p1[1], az = p2[2] - p1[2];
+    const bx = p3[0] - p1[0], by = p3[1] - p1[1], bz = p3[2] - p1[2];
+    let nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx;
+    const nl = Math.hypot(nx, ny, nz) || 1;
+    nx /= nl; ny /= nl; nz /= nl;
+    for (const q of [p1, p2, p3]) {
+      g.pos.push(q[0], q[1], q[2]);
+      g.norm.push(nx, ny, nz);
+      g.uv.push(q[0] / uvScale, q[2] / uvScale);
     }
   }
 

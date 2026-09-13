@@ -6,7 +6,7 @@
 //
 // Bob never appears on the map. Grump only does in daylight, before day 4,
 // while he is still pretending to be your friend.
-import { ITEMS } from '../game/items.js?v=2026-09-13c';
+import { ITEMS } from '../game/items.js?v=2026-09-13d';
 
 const B = 16;                    // base image pixels per grid cell
 
