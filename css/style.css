@@ -409,3 +409,15 @@ table.keys td:first-child {
 @media (max-width: 640px) { #minimap { width: 110px; height: 110px; } }
 .lg.teacher { background: #e8c060; }
 .lead a { color: #ffd23f; font-weight: bold; }
+
+/* cutscenes */
+#letterbox { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
+#letterbox i { position: absolute; left: 0; right: 0; height: 0; background: #000; transition: height .6s ease; }
+#letterbox i:first-child { top: 0; }
+#letterbox i:last-child { bottom: 0; }
+#letterbox.on i { height: 11vh; }
+#hud.cinematic #prompt, #hud.cinematic #hotbar, #hud.cinematic #minimap, #hud.cinematic #quests,
+#hud.cinematic #objectives, #hud.cinematic #bars, #hud.cinematic #toasts, #hud.cinematic #modline, #hud.cinematic #hands, #hud.cinematic #crosshair,
+#hud.cinematic #clock, #hud.cinematic #powerpill { opacity: 0; transition: opacity .4s; }
+#hud.cinematic #subtitle { bottom: calc(11vh + 18px); z-index: 5; font-size: 16px; }
+#hud.cinematic #bigline { z-index: 5; }

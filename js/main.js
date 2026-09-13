@@ -25,6 +25,7 @@ import { Generator, Messes, GroundItems, PortableLights } from './game/systems.j
 import { findInteraction, useSelected, dropHands } from './game/interact.js';
 import { CardKid } from './game/cardkid.js';
 import { Honeywell } from './game/honeywell.js';
+import { Bullies } from './game/bullies.js';
 import { Quests } from './game/quests.js';
 import { rollLoot, DRAWINGS, ITEMS, itemName, isBig, lunchboxContents } from './game/items.js';
 import { pickQuestion } from './game/dialogue.js';
@@ -486,6 +487,7 @@ class Game {
     if (this.grump) this.renderer.scene.remove(this.grump.model);
     if (this.cardKid) this.cardKid.dispose();
     if (this.honeywell) this.honeywell.dispose();
+    if (this.bullies) this.bullies.dispose();
     if (this.jumpModel) { this.renderer.scene.remove(this.jumpModel); this.jumpModel = null; }
     resetMaterials();
 
@@ -515,6 +517,7 @@ class Game {
     this.cardKid = new CardKid(this);
     this.buildSwitches();
     this.honeywell = new Honeywell(this);
+    this.bullies = new Bullies(this);
 
     // Rebuilding the scene must not lose anyone already in the room -- this is
     // what made joiners invisible to the host.
@@ -799,7 +802,8 @@ class Game {
   update(dt, blocked) {
     this.time += dt;
     const k = this.keys;
-    if (blocked || this.chatOpen || this.player.dead) {
+    const inScene = !!(this.bullies && this.bullies.locksPlayer);
+    if (blocked || this.chatOpen || this.player.dead || inScene) {
       this.input.fwd = 0; this.input.right = 0;
       this.input.sprint = false; this.input.crawl = false;
       this.input.lookX = 0; this.input.lookY = 0;
@@ -825,12 +829,13 @@ class Game {
     }
 
     this.player.update(dt, this.input, this);
-    if (!blocked) this.handleInteraction(dt);
+    if (!blocked && !inScene) this.handleInteraction(dt);
     else this.ui.setPrompt(null);
 
     if (this.isHost) {
       this.generator.update(dt, this);
-      this.grump.update(dt, this);
+      // Alone, the real Grump waits while the Big Boys Club scene plays.
+      if (!(inScene && !this.online)) this.grump.update(dt, this);
       this.bob.update(dt, this);
       this.tickBrokenLights(dt);
       this.hostChecks(dt);
@@ -844,6 +849,9 @@ class Game {
     this.grump.present(dt, this);
     this.bob.present(dt, this);
     this.cardKid.update(dt, this);
+    this.bullies.maybeStart(dt);
+    this.bullies.update(dt);
+    this.bullies.hideRealGrump();
     this.honeywell.update(dt);
     this.groundItems.update(dt);
     this.portableLights.update(dt);
@@ -1076,7 +1084,7 @@ class Game {
   }
 
   triggerCardKid(actor) {
-    if (!actor || actor === 'me') this.cardKid.maybeTrigger();
+    if ((!actor || actor === 'me') && !this.bullies.active) this.cardKid.maybeTrigger();
     else if (this.isHost && this.online) this.net.sendTo(actor, { t: 'ev', k: 'cardkid' });
   }
 
@@ -2109,6 +2117,13 @@ class Game {
       }
       case 'quest': if (CLIENT_QUEST_EVENTS.has(m.type)) this.questEvent(m.type); break;
       case 'deliver': if (['hamster', 'crayon', 'holocard'].includes(m.item)) this.handleDeliver(m.item); break;
+      case 'bullied': {
+        // A friend just watched Grump take on the Big Boys Club for them.
+        if (rp.bullied) break;
+        rp.bullied = true;
+        if (!this.grump.turned) this.grump.anger(-20, this, 'bullies');
+        break;
+      }
       case 'answer': {
         this.talkedToday = true;
         if (!this.grump.turned) this.grump.anger(clamp(+m.r || 0, 0, 25), this, 'answer');

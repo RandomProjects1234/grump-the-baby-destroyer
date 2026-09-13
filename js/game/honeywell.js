@@ -154,7 +154,7 @@ export class Honeywell {
       this.darkCheckT = 2;
       const inClass = g.school.roomAt(g.player.x, g.player.z) === g.school.home;
       const dayAge = g.diff.day - g.phaseTime;
-      if (inClass && !g.player.dead && this.darkCd <= 0 && dayAge > 45 && this.classroomDark() && !g.sfx.isSpeaking) {
+      if (inClass && !g.player.dead && !(g.bullies && g.bullies.active) && this.darkCd <= 0 && dayAge > 45 && this.classroomDark() && !g.sfx.isSpeaking) {
         this.nagAboutLights();
       }
     }

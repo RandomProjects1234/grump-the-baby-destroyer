@@ -99,6 +99,13 @@ export class UI {
     e.classList.add('show');
   }
 
+  // Black bars top and bottom while a cutscene plays.
+  letterbox(on) {
+    const e = document.getElementById('letterbox');
+    if (e) e.classList.toggle('on', !!on);
+    this.el.hud.classList.toggle('cinematic', !!on);
+  }
+
   flash(kind) {
     const e = this.el.flash;
     e.className = '';

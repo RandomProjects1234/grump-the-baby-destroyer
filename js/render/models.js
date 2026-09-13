@@ -602,3 +602,184 @@ export function poseCarry(model, t) {
   p.arms[0].rotation.z = 0.25;
   p.arms[1].rotation.z = -0.25;
 }
+
+// ---------------------------------------------------------------- the Big Boys Club
+
+// Three kids from the top year. Letterman jackets, one backwards cap, and a
+// white patch on the back where somebody wrote BBC in marker.
+const BIG_KID_LOOKS = [
+  { jacket: 0x8a1f24, sleeve: 0xefe6d2, skin: 0xe3b48a, hair: 0x2a1a10, cap: 0x1f2f6a, scale: 1.42 },
+  { jacket: 0x1f3f7a, sleeve: 0xd8d2c0, skin: 0xc68e62, hair: 0x14100c, cap: null, scale: 1.34 },
+  { jacket: 0x2f5a2a, sleeve: 0xe8e0cc, skin: 0xf0c8a0, hair: 0xb07a3a, cap: null, scale: 1.3 }
+];
+
+export function makeBigKid(i = 0) {
+  const look = BIG_KID_LOOKS[i % BIG_KID_LOOKS.length];
+  const g = new THREE.Group();
+  const skin = mat(look.skin), jacket = mat(look.jacket), sleeve = mat(look.sleeve), jeans = mat(0x2c3340);
+
+  const body = new THREE.Group();
+  body.position.y = 0.58;
+  body.add(part(box(0.40, 0.46, 0.25), jacket, 0, 0, 0));
+  body.add(part(box(0.18, 0.12, 0.01), mat(0xf4f0e6), 0, 0.06, 0.13));     // BBC patch
+  body.add(part(box(0.06, 0.06, 0.01), mat(0xf0d040), -0.1, 0.12, -0.13)); // badge
+  g.add(body);
+
+  const head = new THREE.Group();
+  head.position.y = 0.58 + 0.23 + 0.19;
+  head.add(part(sphere(0.19, 10), skin, 0, 0, 0));
+  head.add(part(sphere(0.034, 6), mat(0x1a1a1a), -0.068, 0.03, -0.165));
+  head.add(part(sphere(0.034, 6), mat(0x1a1a1a), 0.068, 0.03, -0.165));
+  const brows = part(box(0.2, 0.025, 0.02), mat(look.hair), 0, 0.085, -0.17);
+  head.add(brows);
+  const mouth = part(box(0.1, 0.022, 0.03), mat(0x8a3a32), 0.02, -0.075, -0.17);
+  mouth.rotation.z = -0.25;                                                  // smirk
+  head.add(mouth);
+  const hair = part(sphere(0.2, 10), mat(look.hair), 0, 0.06, 0.02);
+  hair.scale.set(1, 0.6, 1);
+  head.add(hair);
+  if (look.cap) {
+    head.add(part(cyl(0.2, 0.2, 0.1, 10), mat(look.cap), 0, 0.13, 0.01));
+    head.add(part(box(0.2, 0.02, 0.16), mat(look.cap), 0, 0.09, 0.2));      // brim, backwards
+  }
+  g.add(head);
+
+  const arms = [];
+  for (const s of [-1, 1]) {
+    const a = new THREE.Group();
+    a.position.set(s * 0.25, 0.78, 0);
+    a.add(part(cyl(0.055, 0.058, 0.36, 6), sleeve, 0, -0.18, 0));
+    a.add(part(sphere(0.062, 6), skin, 0, -0.39, 0));
+    g.add(a); arms.push(a);
+  }
+  const legs = [];
+  for (const s of [-1, 1]) {
+    const l = new THREE.Group();
+    l.position.set(s * 0.11, 0.36, 0);
+    l.add(part(cyl(0.065, 0.065, 0.38, 6), jeans, 0, -0.19, 0));
+    l.add(part(box(0.12, 0.08, 0.21), mat(0xf2f2f2), 0, -0.40, -0.03));
+    g.add(l); legs.push(l);
+  }
+
+  g.scale.setScalar(look.scale);
+  g.userData.parts = { body, head, arms, legs };
+  return g;
+}
+
+// ---------------------------------------------------------------- Jerry the gym teacher
+
+// Red tracksuit, whistle, headband, very tall socks, and a clipboard he
+// never writes anything on.
+export function makeJerry() {
+  const g = new THREE.Group();
+  const skin = mat(0xd9a27a), suit = mat(0xc23a2a), stripe = mat(0xf2efe6);
+
+  const body = new THREE.Group();
+  body.position.y = 1.02;
+  body.add(part(box(0.5, 0.66, 0.3), suit, 0, 0, 0));
+  body.add(part(box(0.04, 0.66, 0.31), stripe, -0.2, 0, 0));
+  body.add(part(box(0.04, 0.66, 0.31), stripe, 0.2, 0, 0));
+  // whistle on a cord
+  body.add(part(box(0.012, 0.22, 0.012), mat(0x2a2a2a), 0, 0.18, -0.16));
+  body.add(part(cyl(0.03, 0.03, 0.07, 8), mat(0xd8d8d0, { shininess: 60 }), 0, 0.06, -0.18));
+  g.add(body);
+
+  const head = new THREE.Group();
+  head.position.y = 1.02 + 0.33 + 0.2;
+  head.add(part(sphere(0.2, 10), skin, 0, 0, 0));
+  head.add(part(cyl(0.205, 0.205, 0.05, 12), mat(0xf2efe6), 0, 0.08, 0));   // headband
+  head.add(part(sphere(0.034, 6), mat(0x1a1a1a), -0.07, 0.02, -0.175));
+  head.add(part(sphere(0.034, 6), mat(0x1a1a1a), 0.07, 0.02, -0.175));
+  head.add(part(box(0.16, 0.05, 0.04), mat(0x4a2e1c), 0, -0.055, -0.18));   // moustache
+  const hair = part(sphere(0.205, 10), mat(0x4a2e1c), 0, 0.1, 0.02);
+  hair.scale.set(1, 0.5, 1);
+  head.add(hair);
+  g.add(head);
+
+  const arms = [];
+  for (const s of [-1, 1]) {
+    const a = new THREE.Group();
+    a.position.set(s * 0.3, 1.3, 0);
+    a.add(part(cyl(0.07, 0.07, 0.56, 6), suit, 0, -0.28, 0));
+    a.add(part(sphere(0.08, 6), skin, 0, -0.6, 0));
+    g.add(a); arms.push(a);
+  }
+  // clipboard in the left hand
+  const clip = part(box(0.22, 0.3, 0.02), mat(0x9a7a4a), 0, -0.62, -0.08);
+  arms[0].add(clip);
+
+  const legs = [];
+  for (const s of [-1, 1]) {
+    const l = new THREE.Group();
+    l.position.set(s * 0.13, 0.7, 0);
+    l.add(part(cyl(0.085, 0.08, 0.48, 6), suit, 0, -0.24, 0));
+    l.add(part(cyl(0.07, 0.07, 0.18, 6), mat(0xf6f6f0), 0, -0.56, 0));      // tall socks
+    l.add(part(box(0.14, 0.09, 0.27), mat(0x1f1f24), 0, -0.66, -0.05));
+    g.add(l); legs.push(l);
+  }
+
+  g.userData.parts = { body, head, arms, legs };
+  return g;
+}
+
+// ---------------------------------------------------------------- Meredith the lunch lady
+
+// Hairnet, apron, rubber gloves, a big serving ladle, and a smile that is
+// genuinely delighted to see you.
+export function makeMeredith() {
+  const g = new THREE.Group();
+  const skin = mat(0xe8bf9c), dress = mat(0x6a9a8a), apron = mat(0xf4f1ea), glove = mat(0xf0d84a);
+
+  const body = new THREE.Group();
+  body.position.y = 0.95;
+  body.add(part(box(0.54, 0.7, 0.34), dress, 0, 0, 0));
+  body.add(part(box(0.44, 0.62, 0.02), apron, 0, -0.06, -0.18));
+  body.add(part(box(0.14, 0.1, 0.01), mat(0xd04a4a), 0.1, 0.1, -0.195));    // name tag
+  g.add(body);
+
+  const skirt = part(cyl(0.26, 0.34, 0.5, 10), dress, 0, 0.42, 0);
+  g.add(skirt);
+
+  const head = new THREE.Group();
+  head.position.y = 0.95 + 0.35 + 0.21;
+  head.add(part(sphere(0.21, 10), skin, 0, 0, 0));
+  head.add(part(sphere(0.035, 6), mat(0x1a1a1a), -0.07, 0.03, -0.185));
+  head.add(part(sphere(0.035, 6), mat(0x1a1a1a), 0.07, 0.03, -0.185));
+  head.add(part(box(0.12, 0.03, 0.03), mat(0xb04a4a), 0, -0.08, -0.19));
+  head.add(part(sphere(0.04, 6), mat(0xe89a8a), -0.12, -0.03, -0.15));      // rosy cheeks
+  head.add(part(sphere(0.04, 6), mat(0xe89a8a), 0.12, -0.03, -0.15));
+  const net = part(sphere(0.225, 10), mat(0xd8d4e8, { transparent: true, opacity: 0.75 }), 0, 0.07, 0.02);
+  net.scale.set(1, 0.72, 1);
+  head.add(net);
+  head.add(part(sphere(0.1, 8), mat(0x9a9aa8), 0, 0.12, 0.17));             // grey bun
+  g.add(head);
+
+  const arms = [];
+  for (const s of [-1, 1]) {
+    const a = new THREE.Group();
+    a.position.set(s * 0.32, 1.22, 0);
+    a.add(part(cyl(0.075, 0.075, 0.52, 6), dress, 0, -0.26, 0));
+    a.add(part(sphere(0.085, 6), glove, 0, -0.56, 0));
+    g.add(a); arms.push(a);
+  }
+  // the ladle
+  const ladle = new THREE.Group();
+  ladle.position.set(0, -0.58, -0.04);
+  ladle.add(part(cyl(0.015, 0.015, 0.42, 6), mat(0xc8c8c8, { shininess: 70 }), 0, -0.18, 0));
+  const bowl = part(sphere(0.07, 8), mat(0xc8c8c8, { shininess: 70 }), 0, -0.4, 0);
+  bowl.scale.set(1, 0.55, 1);
+  ladle.add(bowl);
+  arms[1].add(ladle);
+
+  const legs = [];
+  for (const s of [-1, 1]) {
+    const l = new THREE.Group();
+    l.position.set(s * 0.12, 0.2, 0);
+    l.add(part(cyl(0.07, 0.07, 0.2, 6), skin, 0, -0.08, 0));
+    l.add(part(box(0.13, 0.08, 0.24), mat(0xf4f4f4), 0, -0.17, -0.04));
+    g.add(l); legs.push(l);
+  }
+
+  g.userData.parts = { body, head, arms, legs, ladle };
+  return g;
+}
