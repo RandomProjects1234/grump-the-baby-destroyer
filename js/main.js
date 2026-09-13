@@ -59,6 +59,11 @@ const NIGHT_MODS = [
 ];
 
 // Client actions the host accepts for quest progress on trust.
+// Bump on every release that changes the school layout or the network
+// messages. Players on different versions build different schools (door and
+// prop numbers stop matching), so co-op refuses to mix them.
+export const GAME_VERSION = '2026-09-13b';
+
 const CLIENT_QUEST_EVENTS = new Set(['eat', 'hide', 'drawing', 'lunch', 'gym']);
 
 function escapeHtml(s) {
@@ -426,7 +431,7 @@ class Game {
     this.ui.loading(true, 'Knocking…');
     this.net.join(code, () => {
       this.myName = name;
-      this.net.send({ t: 'hello', name });
+      this.net.send({ t: 'hello', name, v: GAME_VERSION });
       this.ui.loading(true, 'Waiting for the host to start…');
     }, err => {
       this.ui.loading(false);
@@ -1354,6 +1359,7 @@ class Game {
   // --- doors and lights
   toggleDoor(d, open, silent) {
     if (d.locked && open) { this.sfx.deny(); return; }
+    d.touchT = this.time;
     d.open = open;
     if (d.box) d.box.active = !open;
     if (!silent) {
@@ -1393,6 +1399,7 @@ class Game {
   }
 
   setRoomLights(room, on, by) {
+    room.touchT = this.time;
     room.lightsOn = on;
     this.applyPower();
     if (by === 'player') this.sfx[on ? 'lightOn' : 'lightOff']();
@@ -1820,7 +1827,7 @@ class Game {
   worldMessage() {
     const s = this.school;
     return {
-      t: 'world', seed: this.seed, nights: this.requiredNights, diff: this.diffName,
+      t: 'world', v: GAME_VERSION, seed: this.seed, nights: this.requiredNights, diff: this.diffName,
       st: {
         night: this.night, phase: this.phase, phaseTime: this.phaseTime,
         doors: s.doors.map(d => (d.open ? 1 : 0) | (d.locked ? 2 : 0)),
@@ -1890,6 +1897,8 @@ class Game {
       bf: broken,
       q: this.quests.serialize(),
       eo: this.escapeOpen ? 1 : 0,
+      dr: this.school.doors.map(d => (d.open ? 1 : 0) | (d.locked ? 2 : 0)).join(''),
+      lt: this.school.rooms.map(r => r.lightsOn === false ? 0 : 1).join(''),
       ph: this.phase, pt: +this.phaseTime.toFixed(1), nt: this.night
     });
   }
@@ -1932,10 +1941,27 @@ class Game {
         const rp = this.remotePlayers.get(from);
         if (rp) { rp.name = String(msg.name || 'Baby').slice(0, 12); rp.setName(rp.name); }
         this.ui.chat(`<b>${escapeHtml(rp ? rp.name : 'someone')}</b> joins the school`);
+        if (this.isHost && msg.v !== GAME_VERSION) {
+          this.ui.chat(`<b>${escapeHtml(rp ? rp.name : 'someone')}</b> has a different version of the game. You both need to refresh the page (Ctrl+F5).`);
+          this.ui.toast('A joiner is on a different game version -- both of you refresh (Ctrl+F5).');
+        }
         break;
       }
       case 'world': {
         if (this.isHost) break;
+        if (msg.v !== GAME_VERSION) {
+          // Different code builds a different school: doors, lockers and
+          // messes would not line up. Say so instead of playing broken.
+          this.ui.loading(false);
+          this.net.close();
+          // after the disconnect handling has had its say, show why
+          setTimeout(() => {
+            this.ui.screen('joinscreen');
+            $('#join-err').textContent = 'The host is running a different version of the game. Both of you refresh the page (Ctrl+F5), then try again.';
+            $('#join-go').disabled = false;
+          }, 400);
+          break;
+        }
         this.ui.loading(false);
         this.pendingWorld = msg.st;
         this.startGame({ seed: msg.seed, nights: msg.nights, diff: msg.diff, night: msg.st.night, online: true, name: this.myName });
@@ -2020,6 +2046,30 @@ class Game {
     if (changed) this.applyPower();
 
     this.quests.apply(m.q);
+
+    // Doors and lights: the host's word is final, except for a door or switch
+    // we touched ourselves a moment ago (our message may still be on its way).
+    if (typeof m.dr === 'string') {
+      this.school.doors.forEach((d, i) => {
+        const v = +m.dr[i];
+        if (isNaN(v) || (d.touchT && this.time - d.touchT < 1.5)) return;
+        const open = !!(v & 1), locked = !!(v & 2);
+        if (d.open !== open || d.locked !== locked) {
+          d.open = open; d.locked = locked;
+          if (d.box) d.box.active = !open;
+        }
+      });
+    }
+    if (typeof m.lt === 'string') {
+      let lit = false;
+      this.school.rooms.forEach((r, i) => {
+        const on = m.lt[i] !== '0';
+        if (r.touchT && this.time - r.touchT < 1.5) return;
+        if ((r.lightsOn !== false) !== on) { r.lightsOn = on; lit = true; }
+      });
+      if (lit) this.applyPower();
+    }
+
     if (m.eo && !this.escapeOpen) {
       this.escapeOpen = true;
       for (const d of this.school.exitDoors) d.locked = false;
