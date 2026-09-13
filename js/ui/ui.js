@@ -1,6 +1,6 @@
 // All DOM handling. The game never touches elements directly.
-import { ITEMS, itemName } from '../game/items.js';
-import { fmtTime, clamp } from '../util/util.js';
+import { ITEMS, itemName } from '../game/items.js?v=2026-09-13c';
+import { fmtTime, clamp } from '../util/util.js?v=2026-09-13c';
 
 const $ = s => document.querySelector(s);
 const SCREENS = ['menu', 'soloscreen', 'hostscreen', 'joinscreen', 'settings', 'howto'];

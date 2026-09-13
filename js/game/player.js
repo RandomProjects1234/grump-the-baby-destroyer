@@ -1,7 +1,7 @@
 // The local baby: movement, stats, carrying, hiding.
 import * as THREE from 'three';
-import { clamp, lerp } from '../util/util.js';
-import { isBig, ITEMS } from './items.js';
+import { clamp, lerp } from '../util/util.js?v=2026-09-13c';
+import { isBig, ITEMS } from './items.js?v=2026-09-13c';
 
 export const BAG_SLOTS = 6;
 

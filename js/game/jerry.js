@@ -8,9 +8,9 @@
 // Like the card boy, each player gets their own Jerry: he is a local
 // encounter and nobody else sees him. He is never a threat, only a nuisance.
 // Beat his game and you are fitter for the rest of the day.
-import { makeJerry, animateWalk } from '../render/models.js';
-import { Walker } from './nav.js';
-import { dist2, approachAngle, clamp } from '../util/util.js';
+import { makeJerry, animateWalk } from '../render/models.js?v=2026-09-13c';
+import { Walker } from './nav.js?v=2026-09-13c';
+import { dist2, approachAngle, clamp } from '../util/util.js?v=2026-09-13c';
 
 const GAMES = ['laps', 'dumbbells', 'rope'];
 

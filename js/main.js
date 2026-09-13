@@ -12,32 +12,32 @@
 //   * Anything that should be SEEN or HEARD goes through fx(), which plays it
 //     locally and on every client, attenuated by each player's own position.
 import * as THREE from 'three';
-import { Renderer } from './render/renderer.js';
-import { initTextures } from './render/textures.js';
-import { buildSchool, materialFor, resetMaterials } from './world/build.js';
-import { generateSchool } from './world/schoolgen.js';
-import { buildCollider, computeNavBlocking, repairConnectivity } from './game/collide.js';
-import { Nav } from './game/nav.js';
-import { Player } from './game/player.js';
-import { Bob, Grump } from './game/threats.js';
-import { Toddlers } from './game/toddlers.js';
-import { Generator, Messes, GroundItems, PortableLights } from './game/systems.js';
-import { findInteraction, useSelected, dropHands } from './game/interact.js';
-import { CardKid } from './game/cardkid.js';
-import { Honeywell } from './game/honeywell.js';
-import { Bullies } from './game/bullies.js';
-import { Jerry } from './game/jerry.js';
-import { Meredith } from './game/meredith.js';
-import { Minigames } from './ui/minigames.js';
-import { Quests } from './game/quests.js';
-import { rollLoot, DRAWINGS, ITEMS, itemName, isBig, lunchboxContents } from './game/items.js';
-import { pickQuestion } from './game/dialogue.js';
-import { makeBaby, makeGrump, setGrumpStage, animateWalk, BABY_COLORS, OUTFIT_COLORS } from './render/models.js';
-import { Sfx } from './audio/sfx.js';
-import { UI } from './ui/ui.js';
-import { MapView } from './ui/map.js';
-import { Net } from './net/net.js';
-import { clamp, lerp, dist2, makeRng, hashStr, fmtTime } from './util/util.js';
+import { Renderer } from './render/renderer.js?v=2026-09-13c';
+import { initTextures } from './render/textures.js?v=2026-09-13c';
+import { buildSchool, materialFor, resetMaterials } from './world/build.js?v=2026-09-13c';
+import { generateSchool } from './world/schoolgen.js?v=2026-09-13c';
+import { buildCollider, computeNavBlocking, repairConnectivity } from './game/collide.js?v=2026-09-13c';
+import { Nav } from './game/nav.js?v=2026-09-13c';
+import { Player } from './game/player.js?v=2026-09-13c';
+import { Bob, Grump } from './game/threats.js?v=2026-09-13c';
+import { Toddlers } from './game/toddlers.js?v=2026-09-13c';
+import { Generator, Messes, GroundItems, PortableLights } from './game/systems.js?v=2026-09-13c';
+import { findInteraction, useSelected, dropHands } from './game/interact.js?v=2026-09-13c';
+import { CardKid } from './game/cardkid.js?v=2026-09-13c';
+import { Honeywell } from './game/honeywell.js?v=2026-09-13c';
+import { Bullies } from './game/bullies.js?v=2026-09-13c';
+import { Jerry } from './game/jerry.js?v=2026-09-13c';
+import { Meredith } from './game/meredith.js?v=2026-09-13c';
+import { Minigames } from './ui/minigames.js?v=2026-09-13c';
+import { Quests } from './game/quests.js?v=2026-09-13c';
+import { rollLoot, DRAWINGS, ITEMS, itemName, isBig, lunchboxContents } from './game/items.js?v=2026-09-13c';
+import { pickQuestion } from './game/dialogue.js?v=2026-09-13c';
+import { makeBaby, makeGrump, setGrumpStage, animateWalk, BABY_COLORS, OUTFIT_COLORS } from './render/models.js?v=2026-09-13c';
+import { Sfx } from './audio/sfx.js?v=2026-09-13c';
+import { UI } from './ui/ui.js?v=2026-09-13c';
+import { MapView } from './ui/map.js?v=2026-09-13c';
+import { Net } from './net/net.js?v=2026-09-13c';
+import { clamp, lerp, dist2, makeRng, hashStr, fmtTime } from './util/util.js?v=2026-09-13c';
 
 const SET_KEY = 'grump.settings.v1';
 const $ = s => document.querySelector(s);
@@ -62,7 +62,7 @@ const NIGHT_MODS = [
 // Bump on every release that changes the school layout or the network
 // messages. Players on different versions build different schools (door and
 // prop numbers stop matching), so co-op refuses to mix them.
-export const GAME_VERSION = '2026-09-13b';
+export const GAME_VERSION = '2026-09-13c';
 
 const CLIENT_QUEST_EVENTS = new Set(['eat', 'hide', 'drawing', 'lunch', 'gym']);
 
@@ -153,6 +153,7 @@ class Game {
     this.sfx = new Sfx();
     this.sfx.setVolume(this.settings.vol);
     this.ui = new UI(this);
+    { const v = document.getElementById('gamever'); if (v) v.textContent = 'version ' + GAME_VERSION + ' -- co-op players need the same version'; }
     this.minigames = new Minigames(this);
     this.map = new MapView(this);
     this.net = new Net(this);
@@ -521,7 +522,7 @@ class Game {
       computeNavBlocking(this.school, this.collider);
     }
     this.built = buildSchool(this.school, this.renderer.scene);
-    this.nav = new Nav(this.school);
+    this.nav = new Nav(this.school, this.collider);
     this.propById = new Map(this.school.props.map(p => [p.id, p]));
 
     this.toddlers = new Toddlers(this);

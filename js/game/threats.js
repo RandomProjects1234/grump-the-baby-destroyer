@@ -12,10 +12,10 @@
 // Who is dangerous when: the nights belong to Bob. Grump only watches until day
 // 4, and after that he hunts you in daylight as well as the dark.
 import * as THREE from 'three';
-import { Walker, canSee } from './nav.js';
-import { makeBob, makeGrump, setGrumpStage, animateWalk, poseCarry } from '../render/models.js';
-import { clamp, approachAngle, dist2, lerp } from '../util/util.js';
-import { AMBIENT } from './dialogue.js';
+import { Walker, canSee } from './nav.js?v=2026-09-13c';
+import { makeBob, makeGrump, setGrumpStage, animateWalk, poseCarry } from '../render/models.js?v=2026-09-13c';
+import { clamp, approachAngle, dist2, lerp } from '../util/util.js?v=2026-09-13c';
+import { AMBIENT } from './dialogue.js?v=2026-09-13c';
 
 // A room this bright counts as "lit", and neither threat behaves the same in it.
 export const LIT = 0.55;
@@ -65,6 +65,14 @@ export class Bob {
     // night modifiers
     this.hearMult = 1;
     this.speedBonus = 0;
+    // what he knows
+    this.roomVisits = {};
+    this.litSet = new Set();
+    this.litT = 0;
+    this.curRoomId = -1;
+    this.searchList = [];
+    this.lightsJob = null;
+    this.walker.cost = (gx, gy) => this.navCost(gx, gy);
   }
 
   activate(night) {
@@ -79,6 +87,11 @@ export class Bob {
     this.grabCd = 0;
     this.lastVisible = {};
     this.certainSpot = null;
+    this.roomVisits = {};
+    this.searchList = [];
+    this.lightsJob = null;
+    this.litT = 0;
+    this.lightsOffCd = 10;
   }
 
   deactivate() {
@@ -87,20 +100,6 @@ export class Bob {
   }
 
   get active() { return this.state !== 'off'; }
-
-  patrolTarget() {
-    const g = this.game, s = g.school;
-    if (this.night >= 2 && Math.random() < 0.45) {
-      const lit = s.rooms.filter(r => !r.outdoor && r.type !== 'hall' && r.lightsOn && r !== s.home && r.type !== 'boiler');
-      if (lit.length && g.generator.running) {
-        const r = lit[(Math.random() * lit.length) | 0];
-        return [r.cx, r.cz];
-      }
-    }
-    const halls = s.rooms.filter(r => r.type === 'hall');
-    const r = halls[(Math.random() * halls.length) | 0];
-    return [s.cwx(r.x0 + Math.floor(Math.random() * r.w)), s.cwz(r.y0 + Math.floor(Math.random() * r.h))];
-  }
 
   // Whoever he can currently see. Lit rooms read as "allowed to be there".
   spot(game) {
@@ -117,6 +116,84 @@ export class Bob {
     return bestScore > 0.14 ? best : null;
   }
 
+  // ------------------------------------------------------------ what he knows
+
+  // Which rooms are lit right now. Bob will not set foot in one (the room he
+  // is already standing in excepted, so he can always walk out of it).
+  refreshSenses(game, dt) {
+    const s = game.school;
+    const here = s.roomAt(this.x, this.z);
+    this.curRoomId = here ? here.id : -1;
+    if (here) this.roomVisits[here.id] = game.time;
+    this.litT -= dt;
+    if (this.litT > 0) return;
+    this.litT = 0.4;
+    this.litSet.clear();
+    for (const r of s.rooms) {
+      if (r.type === 'hall' || r.outdoor) continue;
+      if (game.roomBrightness(r.cx, r.cz) > LIT) this.litSet.add(r.id);
+    }
+  }
+
+  navCost(gx, gy) {
+    const s = this.game.school;
+    const id = s.cells[gy * s.W + gx];
+    if (id < 0) return 0;
+    if (this.litSet.has(id) && id !== this.curRoomId) return Infinity;
+    return 0;
+  }
+
+  playersIn(game, room) {
+    return game.threatTargets().some(t => game.school.roomAt(t.x, t.z) === room);
+  }
+
+  // Somewhere to walk: a stretch of corridor, or a dark room he has not looked
+  // in for a while. Rooms he checked recently are much less interesting.
+  patrolTarget() {
+    const g = this.game, s = g.school;
+    let best = null, bestScore = -Infinity;
+    const halls = s.rooms.filter(r => r.type === 'hall');
+    const rooms = s.rooms.filter(r => !r.outdoor && r.type !== 'hall' && r !== s.home && !this.litSet.has(r.id));
+    for (let i = 0; i < 8; i++) {
+      let r, x, z;
+      if (i < 3 || !rooms.length) {
+        r = halls[(Math.random() * halls.length) | 0];
+        x = s.cwx(r.x0 + Math.floor(Math.random() * r.w));
+        z = s.cwz(r.y0 + Math.floor(Math.random() * r.h));
+      } else {
+        r = rooms[(Math.random() * rooms.length) | 0];
+        [x, z] = g.freeSpotIn(r, 0.4);
+      }
+      const since = g.time - (this.roomVisits[r.id] || -120);
+      const far = Math.hypot(x - this.x, z - this.z);
+      const score = Math.min(since, 120) + Math.random() * 25 - Math.max(0, far - 30) * 0.8;
+      if (score > bestScore) { bestScore = score; best = [x, z]; }
+    }
+    return best;
+  }
+
+  // A lit room with nobody in it, and the spot in the corridor just outside
+  // its door where he can reach round the frame for the switch.
+  findLightsJob(game) {
+    const s = game.school;
+    const cands = [];
+    for (const id of this.litSet) {
+      const r = s.rooms[id];
+      if (!r || r === s.home || r.type === 'boiler' || r.type === 'hall' || r.outdoor) continue;
+      if (this.playersIn(game, r)) continue;
+      const door = s.doors.find(d => r.doors.includes(d.id) && !d.locked && !d.exit);
+      if (!door) continue;
+      const nx = door.dir === 'w' ? 1 : 0, nz = 1 - nx;
+      const side = s.roomAt(door.x + nx * 0.9, door.z + nz * 0.9) === r ? -1 : 1;
+      const x = door.x + nx * side * 0.9, z = door.z + nz * side * 0.9;
+      if (!game.collider.free(x, z, 0.36)) continue;
+      cands.push({ room: r, x, z, d: Math.hypot(x - this.x, z - this.z) });
+    }
+    if (!cands.length) return null;
+    cands.sort((a, b) => a.d - b.d);
+    return cands[Math.min(cands.length - 1, (Math.random() * 2) | 0)];
+  }
+
   // "These darn kids..." -- not every time, or it stops being funny.
   grumble(game) {
     if (this.messLineCd > 0) return;
@@ -129,31 +206,48 @@ export class Bob {
     this.grabCd = Math.max(0, this.grabCd - dt);
     this.messLineCd = Math.max(0, this.messLineCd - dt);
     this.animT += dt;
+    this.refreshSenses(game, dt);
 
     let speed = 0;
     const seen = this.spot(game);
     if (seen) this.lastVisible[seen.id] = game.time;
+    const patrolSpeed = 1.5 + Math.min(0.7, (this.night - 1) * 0.12) + this.speedBonus * 0.5;
+
+    // Someone switched the lights on around him: he does not stay.
+    if (this.state !== 'chase' && this.litSet.has(this.curRoomId) && this.state !== 'leaving') {
+      const hall = this.nearestHallPoint(game);
+      if (hall) {
+        this.state = 'leaving';
+        this.timer = 8;
+        this.walker.setGoal(hall[0], hall[1], true);
+        if (this.squintRoom !== this.curRoomId) {
+          this.squintRoom = this.curRoomId;
+          game.fx('sub', this.x, this.z, { text: 'Bob squints at the light and backs out of the room.', range: 18 });
+        }
+      }
+    }
 
     switch (this.state) {
       case 'patrol': {
         this.sweep = Math.sin(this.animT * 0.9) * 0.55;
-        speed = 1.5 + Math.min(0.7, (this.night - 1) * 0.12) + this.speedBonus * 0.5;
-        if (this.walker.arrived || !this.walker.goal) {
-          const [tx, tz] = this.patrolTarget();
-          this.walker.setGoal(tx, tz, true);
+        speed = patrolSpeed;
+        if (this.walker.arrived || !this.walker.goal || this.walker.failed) {
+          const t = this.patrolTarget();
+          if (t) this.walker.setGoal(t[0], t[1], true);
         }
-        // Lights out behind him, one room at a time.
+        // From night 2 he goes round turning off lights in empty rooms --
+        // from the doorway. Never in a room with someone in it.
         this.lightsOffCd -= dt;
-        if (this.lightsOffCd <= 0) {
-          this.lightsOffCd = 5;
-          const r = game.school.roomAt(this.x, this.z);
-          if (r && this.night >= 2 && r !== game.school.home && r.type !== 'boiler' && r.type !== 'hall' && r.lightsOn) {
-            game.setRoomLights(r, false, 'bob');
-            game.fx('switch', this.x, this.z);
-            this.grumble(game);
+        if (this.lightsOffCd <= 0 && this.night >= 2) {
+          this.lightsOffCd = 18 + Math.random() * 16;
+          const job = this.findLightsJob(game);
+          if (job) {
+            this.state = 'lights';
+            this.lightsJob = job;
+            this.timer = 25;
+            this.walker.setGoal(job.x, job.z, true);
           }
         }
-        // Walking past a mess nobody cleaned up sets him off too.
         this.messCheckT -= dt;
         if (this.messCheckT <= 0) {
           this.messCheckT = 1;
@@ -162,29 +256,76 @@ export class Bob {
         if (seen) this.startChase(seen, game);
         break;
       }
+      case 'lights': {
+        this.sweep = Math.sin(this.animT * 0.9) * 0.4;
+        speed = patrolSpeed * 1.1;
+        this.timer -= dt;
+        const job = this.lightsJob;
+        if (!job || !this.litSet.has(job.room.id) || this.playersIn(game, job.room) || this.timer <= 0 || this.walker.failed) {
+          this.state = 'patrol'; this.lightsJob = null; this.walker.clear();
+        } else if (Math.hypot(job.x - this.x, job.z - this.z) < 1.3) {
+          game.setRoomLights(job.room, false, 'bob');
+          game.fx('switch', job.x, job.z);
+          game.fx('sub', this.x, this.z, { text: 'Bob reaches round the door frame. The lights go out.', range: 14 });
+          this.grumble(game);
+          this.state = 'patrol'; this.lightsJob = null; this.walker.clear();
+        }
+        if (seen) this.startChase(seen, game);
+        break;
+      }
+      case 'leaving': {
+        speed = patrolSpeed * 1.2;
+        this.timer -= dt;
+        if (!this.litSet.has(this.curRoomId) || this.walker.arrived || this.timer <= 0) {
+          this.state = 'patrol'; this.walker.clear();
+        }
+        break;
+      }
       case 'investigate': {
         this.sweep = Math.sin(this.animT * 2.2) * 0.8;
         speed = 2.0 + this.speedBonus * 0.5;
         this.timer -= dt;
-        if (this.walker.arrived || this.timer <= 0) {
-          // He opens the locker he saw you climb into. Anything else is a gamble
-          // on his part -- hiding is supposed to work.
-          const certain = !!this.certainSpot;
-          const spot = this.certainSpot || game.nearestHideSpot(this.x, this.z, 2.2);
+        if (this.walker.arrived || this.timer <= 0 || this.walker.failed) {
+          // He opens the locker he saw you climb into. Otherwise he pokes at
+          // the one or two hiding places nearest the noise -- a gamble on his
+          // part, because hiding is supposed to work.
+          const certain = this.certainSpot;
           this.certainSpot = null;
-          if (spot && !spot.checked) {
-            spot.checked = true;
-            game.fx('lockerOpen', spot.x, spot.z);
-            const chance = certain ? 1 : clamp(0.18 + this.night * 0.025, 0.18, 0.42) * this.hearMult;
-            if (Math.random() < chance) {
-              const occupant = game.occupantOf(spot);
-              if (occupant) { game.forceUnhide(occupant); this.startChase(occupant, game); break; }
-            }
-          }
-          this.state = 'patrol';
-          this.walker.clear();
+          const list = certain ? [certain] : game.school.props
+            .filter(p => p.hide && !p.checked && Math.hypot(p.x - this.x, p.z - this.z) < 3.8)
+            .sort((a, b) => Math.hypot(a.x - this.x, a.z - this.z) - Math.hypot(b.x - this.x, b.z - this.z))
+            .slice(0, 2);
+          this.searchList = list.map(p => ({ prop: p, certain: !!certain }));
+          if (this.searchList.length) { this.state = 'search'; this.nextSearch(); }
+          else { this.state = 'patrol'; this.walker.clear(); }
         }
         if (seen) this.startChase(seen, game);
+        break;
+      }
+      case 'search': {
+        this.sweep = Math.sin(this.animT * 2.6) * 0.5;
+        speed = 1.9 + this.speedBonus * 0.5;
+        this.timer -= dt;
+        const cur = this.searchList[0];
+        if (!cur) { this.state = 'patrol'; this.walker.clear(); break; }
+        const fx = cur.prop.x + Math.sin(cur.prop.rot) * 0.95, fz = cur.prop.z + Math.cos(cur.prop.rot) * 0.95;
+        if (Math.hypot(fx - this.x, fz - this.z) < 1.1 || this.timer <= 0 || this.walker.failed) {
+          const spot = cur.prop;
+          spot.checked = true;
+          game.fx('lockerOpen', spot.x, spot.z);
+          const chance = cur.certain ? 1 : clamp(0.18 + this.night * 0.025, 0.18, 0.42) * this.hearMult;
+          const occupant = game.occupantOf(spot);
+          if (occupant && Math.random() < chance) {
+            game.forceUnhide(occupant);
+            this.startChase(occupant, game);
+            this.searchList = [];
+            break;
+          }
+          this.searchList.shift();
+          if (this.searchList.length) this.nextSearch();
+          else { this.state = 'patrol'; this.walker.clear(); }
+        }
+        if (seen) { this.searchList = []; this.startChase(seen, game); }
         break;
       }
       case 'chase': {
@@ -214,9 +355,21 @@ export class Bob {
         }
 
         if (seen && seen === t) {
+          // Aim a little ahead of where they are running.
+          const prev = this.lastSeen;
+          let vx = 0, vz = 0;
+          if (prev && this.lastSeenT !== undefined) {
+            const since = Math.max(0.05, game.time - this.lastSeenT);
+            vx = clamp((t.x - prev[0]) / since, -4, 4);
+            vz = clamp((t.z - prev[1]) / since, -4, 4);
+          }
           this.lastSeen = [t.x, t.z];
+          this.lastSeenT = game.time;
           this.loseTimer = 4.5;
-          this.walker.setGoal(t.x, t.z);
+          const d = Math.hypot(t.x - this.x, t.z - this.z);
+          const lead = d > 2.5 ? Math.min(0.5, d / 10) : 0;
+          const gx = t.x + vx * lead, gz = t.z + vz * lead;
+          this.walker.setGoal(game.collider.free(gx, gz, 0.3) ? gx : t.x, game.collider.free(gx, gz, 0.3) ? gz : t.z);
         } else {
           this.loseTimer -= dt;
           if (this.lastSeen) this.walker.setGoal(this.lastSeen[0], this.lastSeen[1]);
@@ -227,8 +380,11 @@ export class Bob {
             break;
           }
         }
-        // Giving up when the target reaches a lit room is what makes lights matter.
-        if (game.roomBrightness(t.x, t.z) > LIT && dist2(this.x, this.z, t.x, t.z) > 2.2) {
+        // Giving up when the target reaches a lit room is what makes lights
+        // matter -- and he will not path through one to get at them either.
+        const tRoom = game.school.roomAt(t.x, t.z);
+        const intoLight = game.roomBrightness(t.x, t.z) > LIT || (tRoom && this.litSet.has(tRoom.id) && tRoom.id !== this.curRoomId);
+        if ((intoLight && dist2(this.x, this.z, t.x, t.z) > 2.2) || (this.walker.failed && dist2(this.x, this.z, t.x, t.z) > 2.2)) {
           this.state = 'patrol';
           this.walker.clear();
           game.fx('sub', this.x, this.z, { text: 'Bob turns away.', range: 20 });
@@ -240,7 +396,28 @@ export class Bob {
     }
 
     this.walker.step(this, dt, speed, d => game.aiOpenDoor(d));
-    if (this.walker.goal) this.yaw = approachAngle(this.yaw, this.walker.heading, dt * 5);
+    if (this.walker.goal && speed > 0) this.yaw = approachAngle(this.yaw, this.walker.heading, dt * 5);
+  }
+
+  nextSearch() {
+    const cur = this.searchList[0];
+    if (!cur) return;
+    this.timer = 7;
+    this.walker.setGoal(cur.prop.x + Math.sin(cur.prop.rot) * 0.95, cur.prop.z + Math.cos(cur.prop.rot) * 0.95, true);
+  }
+
+  nearestHallPoint(game) {
+    const s = game.school;
+    let best = null, bd = Infinity;
+    for (const r of s.rooms) {
+      if (r.type !== 'hall') continue;
+      for (let y = r.y0; y <= r.y1; y++) for (let x = r.x0; x <= r.x1; x++) {
+        const wx = s.cwx(x), wz = s.cwz(y);
+        const d = Math.hypot(wx - this.x, wz - this.z);
+        if (d < bd && !s.blocked[y * s.W + x]) { bd = d; best = [wx, wz]; }
+      }
+    }
+    return best;
   }
 
   // Runs everywhere.
@@ -284,8 +461,13 @@ export class Bob {
   hearNoise(x, z, level, game) {
     if (this.state === 'chase' || this.state === 'off') return;
     const d = dist2(this.x, this.z, x, z);
-    const hearing = (7 + level * 16) * this.hearMult;
+    let hearing = (7 + level * 16) * this.hearMult;
+    // walls muffle it
+    if (!game.collider.wallsClear(this.x, this.z, x, z)) hearing *= 0.6;
     if (d > hearing) return;
+    // a noise inside a lit room is none of his business
+    const nr = game.school.roomAt(x, z);
+    if (nr && this.litSet.has(nr.id) && nr.id !== this.curRoomId) return;
     this.state = 'investigate';
     this.timer = 10;
     this.walker.setGoal(x + (Math.random() - 0.5), z + (Math.random() - 0.5), true);

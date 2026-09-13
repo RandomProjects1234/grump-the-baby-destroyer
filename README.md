@@ -216,6 +216,17 @@ js/
 
 ## Notes for anyone poking at it
 
+- **Releasing:** bump `GAME_VERSION` in `js/main.js`, then run `python tools/stamp.py`.
+  It stamps every module import with `?v=<version>` so browsers never mix cached old
+  files with new ones, and co-op refuses to join players on different versions
+  (different code builds a different school, so doors would not line up).
+- **AI:** `nav.js` is 8-direction A* that never cuts wall corners, with per-walker
+  cost functions (Bob treats lit rooms as walls) and a penalty for squeezing past
+  furniture; walkers smooth their paths by heading for the furthest waypoint they
+  can actually walk to, and sidestep when blocked. Bob stays out of lit rooms,
+  backs out if the lights come on around him, and only switches lights off from
+  the doorway of rooms nobody is in.
+
 - **Everything is procedural** except fourteen recorded voice lines: Grump (3),
   Bob (3, pitched down), Mrs. Honeywell (2), Jerry (3), Meredith (1) and the
   card boy (2). Textures are

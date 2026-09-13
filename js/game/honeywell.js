@@ -10,8 +10,8 @@
 // She lives entirely on each player's own machine: her spot is fixed by the
 // school layout and her routine by the phase clock, so nothing about her ever
 // needs to be sent over the network.
-import { makeHoneywell, animateWalk } from '../render/models.js';
-import { approachAngle, dist2 } from '../util/util.js';
+import { makeHoneywell, animateWalk } from '../render/models.js?v=2026-09-13c';
+import { approachAngle, dist2 } from '../util/util.js?v=2026-09-13c';
 
 // Things she says when you walk up to her. Her two recorded lines are the
 // morning one and the one about the lights; these appear as subtitles.

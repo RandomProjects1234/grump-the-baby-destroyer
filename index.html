@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/style.css?v=2026-09-13c">
 <script type="importmap">
 { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
 </script>
@@ -98,7 +98,7 @@
     <button data-wiki>Wiki</button>
     <button data-go="settings">Settings</button>
   </div>
-  <div class="foot">A game about a baby, a generator, and a boy who is not a boy.</div>
+  <div class="foot">A game about a baby, a generator, and a boy who is not a boy.<br><span id="gamever"></span></div>
 </div>
 
 <!-- ================================================================= solo -->
@@ -292,7 +292,7 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js"></script>
+<script type="module" src="js/main.js?v=2026-09-13c"></script>
 <script>
 document.querySelectorAll('[data-wiki]').forEach(b => b.addEventListener('click', () =>
   window.open('https://randomprojects1234.github.io/grump-the-baby-destroyer-wiki/', '_blank', 'noopener')));

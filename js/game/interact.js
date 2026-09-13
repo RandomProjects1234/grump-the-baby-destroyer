@@ -1,8 +1,8 @@
 // Finds whatever the player is looking at and turns it into a prompt plus an
 // action. Anything that takes effort is a hold, so the player is committed and
 // vulnerable while they do it.
-import { ITEMS, SEARCH_TIME, isBig, isFood, itemName } from './items.js';
-import { dist2 } from '../util/util.js';
+import { ITEMS, SEARCH_TIME, isBig, isFood, itemName } from './items.js?v=2026-09-13c';
+import { dist2 } from '../util/util.js?v=2026-09-13c';
 
 const REACH = 2.5;
 const CONE = 0.82;         // radians of half-angle we accept

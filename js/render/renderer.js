@@ -5,7 +5,7 @@
 // fixtures are nearest the camera, which is indistinguishable from the real
 // thing when you can only see one or two rooms at a time.
 import * as THREE from 'three';
-import { clamp, lerp } from '../util/util.js';
+import { clamp, lerp } from '../util/util.js?v=2026-09-13c';
 
 const POOL = 6;
 
