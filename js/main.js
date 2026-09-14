@@ -12,32 +12,32 @@
 //   * Anything that should be SEEN or HEARD goes through fx(), which plays it
 //     locally and on every client, attenuated by each player's own position.
 import * as THREE from 'three';
-import { Renderer } from './render/renderer.js?v=2026-09-13d';
-import { initTextures } from './render/textures.js?v=2026-09-13d';
-import { buildSchool, materialFor, resetMaterials } from './world/build.js?v=2026-09-13d';
-import { generateSchool } from './world/schoolgen.js?v=2026-09-13d';
-import { buildCollider, computeNavBlocking, repairConnectivity } from './game/collide.js?v=2026-09-13d';
-import { Nav } from './game/nav.js?v=2026-09-13d';
-import { Player } from './game/player.js?v=2026-09-13d';
-import { Bob, Grump } from './game/threats.js?v=2026-09-13d';
-import { Toddlers } from './game/toddlers.js?v=2026-09-13d';
-import { Generator, Messes, GroundItems, PortableLights } from './game/systems.js?v=2026-09-13d';
-import { findInteraction, useSelected, dropHands } from './game/interact.js?v=2026-09-13d';
-import { CardKid } from './game/cardkid.js?v=2026-09-13d';
-import { Honeywell } from './game/honeywell.js?v=2026-09-13d';
-import { Bullies } from './game/bullies.js?v=2026-09-13d';
-import { Jerry } from './game/jerry.js?v=2026-09-13d';
-import { Meredith } from './game/meredith.js?v=2026-09-13d';
-import { Minigames } from './ui/minigames.js?v=2026-09-13d';
-import { Quests } from './game/quests.js?v=2026-09-13d';
-import { rollLoot, DRAWINGS, ITEMS, itemName, isBig, lunchboxContents } from './game/items.js?v=2026-09-13d';
-import { pickQuestion } from './game/dialogue.js?v=2026-09-13d';
-import { makeBaby, makeGrump, setGrumpStage, animateWalk, BABY_COLORS, OUTFIT_COLORS } from './render/models.js?v=2026-09-13d';
-import { Sfx } from './audio/sfx.js?v=2026-09-13d';
-import { UI } from './ui/ui.js?v=2026-09-13d';
-import { MapView } from './ui/map.js?v=2026-09-13d';
-import { Net } from './net/net.js?v=2026-09-13d';
-import { clamp, lerp, dist2, makeRng, hashStr, fmtTime } from './util/util.js?v=2026-09-13d';
+import { Renderer } from './render/renderer.js?v=2026-09-13e';
+import { initTextures } from './render/textures.js?v=2026-09-13e';
+import { buildSchool, materialFor, resetMaterials } from './world/build.js?v=2026-09-13e';
+import { generateSchool } from './world/schoolgen.js?v=2026-09-13e';
+import { buildCollider, computeNavBlocking, repairConnectivity } from './game/collide.js?v=2026-09-13e';
+import { Nav } from './game/nav.js?v=2026-09-13e';
+import { Player } from './game/player.js?v=2026-09-13e';
+import { Bob, Grump } from './game/threats.js?v=2026-09-13e';
+import { Toddlers } from './game/toddlers.js?v=2026-09-13e';
+import { Generator, Messes, GroundItems, PortableLights } from './game/systems.js?v=2026-09-13e';
+import { findInteraction, useSelected, dropHands } from './game/interact.js?v=2026-09-13e';
+import { CardKid } from './game/cardkid.js?v=2026-09-13e';
+import { Honeywell } from './game/honeywell.js?v=2026-09-13e';
+import { Bullies } from './game/bullies.js?v=2026-09-13e';
+import { Jerry } from './game/jerry.js?v=2026-09-13e';
+import { Meredith } from './game/meredith.js?v=2026-09-13e';
+import { Minigames } from './ui/minigames.js?v=2026-09-13e';
+import { Quests } from './game/quests.js?v=2026-09-13e';
+import { rollLoot, DRAWINGS, ITEMS, itemName, isBig, lunchboxContents } from './game/items.js?v=2026-09-13e';
+import { pickQuestion } from './game/dialogue.js?v=2026-09-13e';
+import { makeBaby, makeGrump, makeBob, setGrumpStage, animateWalk, BABY_COLORS, OUTFIT_COLORS } from './render/models.js?v=2026-09-13e';
+import { Sfx } from './audio/sfx.js?v=2026-09-13e';
+import { UI } from './ui/ui.js?v=2026-09-13e';
+import { MapView } from './ui/map.js?v=2026-09-13e';
+import { Net } from './net/net.js?v=2026-09-13e';
+import { clamp, lerp, dist2, makeRng, hashStr, fmtTime } from './util/util.js?v=2026-09-13e';
 
 const SET_KEY = 'grump.settings.v1';
 
@@ -65,7 +65,7 @@ const DIFF = {
 const NIGHT_MODS = [
   { id: 'storm', name: 'Storm', desc: 'Thunder outside. The lights stutter and the generator wears twice as fast.' },
   { id: 'overtime', name: 'Overtime', desc: 'Bob is on a double shift. He is faster, and he hears everything.' },
-  { id: 'hungry', name: 'Hungry night', desc: 'The little ones get hungry twice as fast.' },
+  { id: 'echo', name: 'Echoes', desc: 'Every sound you make carries further tonight.' },
   { id: 'long', name: 'The long night', desc: 'This night lasts longer than the others.' },
   { id: 'closer', name: 'He is closer', desc: 'Grump starts the night outside your classroom.' },
   { id: 'cold', name: 'Cold night', desc: 'Your torch battery drains twice as fast.' }
@@ -75,7 +75,7 @@ const NIGHT_MODS = [
 // Bump on every release that changes the school layout or the network
 // messages. Players on different versions build different schools (door and
 // prop numbers stop matching), so co-op refuses to mix them.
-export const GAME_VERSION = '2026-09-13d';
+export const GAME_VERSION = '2026-09-13e';
 
 const CLIENT_QUEST_EVENTS = new Set(['eat', 'hide', 'drawing', 'lunch', 'gym']);
 
@@ -1040,25 +1040,41 @@ class Game {
   }
 
   updateJumpscare(dt) {
-    if (this.jumpT <= 0) { if (this.jumpModel) this.jumpModel.visible = false; return; }
+    if (this.jumpT <= 0) {
+      if (this.jumpModel) this.jumpModel.visible = false;
+      if (this.bobJumpModel) this.bobJumpModel.visible = false;
+      if (this.pendingLostFound) this.finishBobGrab();
+      return;
+    }
     this.jumpT -= dt;
     if (!this.jumpModel) {
       this.jumpModel = makeGrump();
       setGrumpStage(this.jumpModel, 4);
       this.renderer.scene.add(this.jumpModel);
     }
+    if (!this.bobJumpModel) {
+      this.bobJumpModel = makeBob();
+      this.renderer.scene.add(this.bobJumpModel);
+    }
+    const bob = this.jumpKind === 'bob';
     const cam = this.renderer.camera;
     const f = this.player.forward();
-    const m = this.jumpModel;
+    const m = bob ? this.bobJumpModel : this.jumpModel;
+    (bob ? this.jumpModel : this.bobJumpModel).visible = false;
     m.visible = true;
-    // Starts a little way off and lunges at the lens, so his whole face fills
-    // the screen rather than the camera clipping into his chest. His head sits
-    // 1.36m up the scaled model, so that is how far down it has to go.
-    const dist = 0.8 + Math.max(0, this.jumpT - 0.45) * 1.1;
-    m.position.set(cam.position.x + f.x * dist, cam.position.y - 1.36, cam.position.z + f.z * dist);
+    // Starts a little way off and lunges at the lens, so the whole face fills
+    // the screen rather than the camera clipping into a chest. Grump's head
+    // sits 1.36m up his scaled model, Bob's 1.51m, so that is how far down
+    // each has to go.
+    const dist = (bob ? 0.62 : 0.8) + Math.max(0, this.jumpT - 0.45) * 1.1;
+    m.position.set(cam.position.x + f.x * dist, cam.position.y - (bob ? 1.51 : 1.36), cam.position.z + f.z * dist);
     // Face the camera, and light the face from below so it reads in the dark.
     m.rotation.y = this.player.yaw + Math.PI;
-    m.userData.parts.head.rotation.z = Math.sin(this.jumpT * 40) * 0.2;
+    m.userData.parts.head.rotation.z = Math.sin(this.jumpT * 40) * (bob ? 0.12 : 0.2);
+    if (bob && m.userData.parts.arms) {
+      m.userData.parts.arms[0].rotation.x = -2.2 + Math.sin(this.jumpT * 30) * 0.2;
+      m.userData.parts.arms[1].rotation.x = -2.2 - Math.sin(this.jumpT * 30) * 0.2;
+    }
     this.renderer.setGrumpGlow(true, new THREE.Vector3(
       cam.position.x + f.x * 0.3, cam.position.y - 0.3, cam.position.z + f.z * 0.3), 2.2);
     this.player.shake = 1.4;
@@ -1124,7 +1140,7 @@ class Game {
       case 'grumpAngry': if (d < 28) sfx.grumpAngry(); break;
       case 'grumpCatch': if (d < 30 && !mine) sfx.voice('angry', att(30), 0.8); break;
       case 'pop': if (d < 24) sfx.bulbPop(att(24)); break;
-      case 'cry': if (d < 30) { sfx.babyCry(); if (d < 14) ui.subtitle(e.name + ' is crying.'); } break;
+      case 'cry': if (d < 30) { sfx.babyCry(); if (d < 14) ui.subtitle(e.hurt ? e.name + " is hurt and crying. The nurse's office has plasters." : e.name + ' is crying.'); } break;
       case 'genStart': if (d < 30) sfx.genStart(); break;
       case 'blackout': sfx.blackout(); ui.flash('blackout'); break;
       case 'big':
@@ -1327,6 +1343,19 @@ class Game {
     if (this.player.carryingToddler && this.player.hands.toddler === id) return this.player;
     for (const rp of this.remotePlayers.values()) if (rp.carrying === id) return rp;
     return null;
+  }
+
+  // The nurse's office: a quick minigame, then the little one can go home.
+  bandageToddler(t) {
+    if (!t || !t.injured || t.bandaged || this.minigames.active) return;
+    this.minigames.open('bandage', r => {
+      if (!r.win) { this.ui.toast(t.name + ' wriggled free. Try the plaster again.'); return; }
+      this.sfx.ding();
+      this.score += 60;
+      this.ui.toast(t.name + ' is patched up! Now carry them back to your classroom.');
+      if (this.isHost) { if (this.toddlers.bandage(t)) this.questEvent('bandaged'); }
+      else { this.toddlers.bandage(t); this.net.send({ t: 'act', k: 'bandage', id: t.id }); }
+    });
   }
 
   feedToddler(t, food) {
@@ -1622,6 +1651,7 @@ class Game {
   }
 
   emitNoise(x, z, level, src) {
+    if (this.mods && this.mods.echo) level *= 1.35;
     if (level <= 0.02) return;
     this.noiseEvents.push({ x, z, level, src });
   }
@@ -1700,15 +1730,19 @@ class Game {
       p.hurt(28, this, 'bob');
       if (p.hidden) p.exitHide(this);
       const n = p.dropAll(this);
-      const lf = this.school.lostfound;
-      [p.x, p.z] = this.freeSpotIn(lf, 0.3);
-      p.fear = Math.min(100, p.fear + 30);
-      this.ui.flash('spotted');
-      this.ui.bigLine('LOST AND FOUND');
-      this.ui.toast(n ? `Bob took ${n} of your things.` : 'Bob put you back where you belong.');
+      p.fear = 100;
+      // His face, right in yours -- then you wake up in Lost & Found.
+      this.jumpKind = 'bob';
+      this.jumpT = 1.05;
+      this.sfx.jumpscare();
+      this.sfx.voice('bobScream', 1, 0.9);
+      this.ui.flash('grump');
+      this.bobTaken = n;
+      this.pendingLostFound = true;
     } else if (src === 'grump') {
       p.invuln = 0;
       if (p.hidden) p.exitHide(this);
+      this.jumpKind = 'grump';
       this.jumpT = 0.9;
       this.sfx.jumpscare();
       this.sfx.voice('angry', 1, 0.75);
@@ -1717,6 +1751,20 @@ class Game {
       p.fear = 100;
       this.ui.bigLine(e.text || 'HE FOUND YOU');
     }
+  }
+
+  // After Bob's face: you are in Lost & Found and your things are gone.
+  finishBobGrab() {
+    this.pendingLostFound = false;
+    const p = this.player;
+    if (p.dead) return;
+    const lf = this.school.lostfound;
+    [p.x, p.z] = this.freeSpotIn(lf, 0.3);
+    p.fear = Math.min(100, p.fear);
+    this.ui.flash('spotted');
+    this.ui.bigLine('LOST AND FOUND');
+    const n = this.bobTaken || 0;
+    this.ui.toast(n ? `Bob took ${n} of your things.` : 'Bob put you back where you belong.');
   }
 
   onGrumpStageUp(stage) {
@@ -2357,7 +2405,7 @@ class Game {
         if (t) this.toddlers.place(t, +m.x || rp.x, +m.z || rp.z, this, false);
         break;
       }
-      case 'feed': { const t = this.toddlers.byId(m.id); if (t) { this.toddlers.feed(t); this.questEvent('fed'); } break; }
+      case 'bandage': { const t = this.toddlers.byId(m.id); if (t && this.toddlers.bandage(t)) this.questEvent('bandaged'); break; }
       case 'teddy': { const t = this.toddlers.byId(m.id); if (t) this.toddlers.calm(t); break; }
       case 'mess': {
         const mm = this.messes.list[m.id];

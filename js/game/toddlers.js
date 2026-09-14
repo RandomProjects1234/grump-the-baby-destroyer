@@ -1,7 +1,11 @@
 // The other children left behind. Finding them is optional; keeping them is
 // what the score is actually made of.
-import { makeToddler, animateWalk } from '../render/models.js?v=2026-09-13d';
-import { clamp, dist2, makeRng } from '../util/util.js?v=2026-09-13d';
+//
+// About one in four is hurt. A hurt toddler sits still and whimpers (which
+// makes noise), shows a red cross, and cannot be kept safe in your classroom
+// until somebody carries them to the nurse's office and puts a plaster on.
+import { makeToddler, animateWalk } from '../render/models.js?v=2026-09-13e';
+import { clamp, dist2, makeRng } from '../util/util.js?v=2026-09-13e';
 
 const NAMES = ['Pip', 'Moo', 'Bibi', 'Tog', 'Nell', 'Dot', 'Wex', 'Bun', 'Cricket', 'Snib'];
 
@@ -32,8 +36,30 @@ export class Toddlers {
         const tz = r.cz + (rng() - 0.5) * (r.h - 1.4) * s.CELL;
         if (this.game.collider.free(tx, tz, 0.3)) { x = tx; z = tz; break; }
       }
-      this.add(x, z, rng);
+      const t = this.add(x, z, rng);
+      t.injured = rng() < 0.25;
+      this.dress(t);
     }
+  }
+
+  // Show the red cross / plaster to match their state.
+  dress(t) {
+    const p = t.model.userData.parts;
+    const hurt = t.injured && !t.bandaged;
+    if (p.hurt) p.hurt.visible = hurt && t.state !== 'safe';
+    if (p.scrape) p.scrape.visible = hurt;
+    if (p.bandage) p.bandage.visible = !!(t.injured && t.bandaged);
+  }
+
+  get hurt() { return this.list.filter(t => t.injured && !t.bandaged && t.state !== 'taken'); }
+
+  // Plaster on: they can go home now.
+  bandage(t) {
+    if (!t || !t.injured || t.bandaged) return false;
+    t.bandaged = true;
+    t.cryT = 30;
+    this.dress(t);
+    return true;
   }
 
   add(x, z, rng = Math.random) {
@@ -43,8 +69,9 @@ export class Toddlers {
       name: NAMES[idx % NAMES.length],
       x, z, yaw: rng() * 6.28,
       state: 'lost',
-      hunger: 30 + rng() * 30,
-      cryT: 2 + rng() * 6,
+      injured: false,
+      bandaged: false,
+      cryT: 4 + rng() * 8,
       wanderT: 0,
       home: null,
       calm: false,          // given a teddy: sleeps through the night
@@ -95,7 +122,14 @@ export class Toddlers {
     t.model.position.set(x, 0, z);
     const room = game.school.roomAt(x, z);
     const wasSafe = t.state === 'safe';
-    if (room === game.school.home) {
+    if (room === game.school.home && t.injured && !t.bandaged) {
+      // not until they are patched up
+      t.state = 'lost';
+      if (local) {
+        game.sfx.deny();
+        game.ui.toast(t.name + ' is hurt. Take them to the nurse\'s office for a plaster first.');
+      }
+    } else if (room === game.school.home) {
       t.state = 'safe';
       t.home = [x, z];
       if (!wasSafe) {
@@ -111,10 +145,10 @@ export class Toddlers {
       t.state = 'lost';
       if (local) game.sfx.drop();
     }
+    this.dress(t);
   }
 
-  feed(t) { t.hunger = 0; t.cryT = 20; }
-  calm(t) { t.calm = true; t.hunger = Math.min(t.hunger, 40); }
+  calm(t) { t.calm = true; }
 
   // Grump collects whoever is still out in the building when it gets dark.
   takeOne(game) {
@@ -139,6 +173,7 @@ export class Toddlers {
           t.model.position.set(t.x, 0, t.z);
           t.model.rotation.y = t.yaw + Math.PI;
           animateWalk(t.model, t.animT, 0, { amp: 0.9 });
+          this.bob(t);
         }
         continue;
       }
@@ -149,11 +184,11 @@ export class Toddlers {
         continue;
       }
 
-      t.hunger = clamp(t.hunger + dt * (t.calm ? 0.5 : 1.5) * (game.mods.hungry ? 2 : 1), 0, 100);
-
+      const hurt = t.injured && !t.bandaged;
       if (t.state === 'lost') {
-        // Wander a little during the day, freeze and whimper at night.
-        if (game.phase === 'day') {
+        // Wander a little during the day, freeze and whimper at night. A hurt
+        // one just sits where they are.
+        if (game.phase === 'day' && !hurt) {
           t.wanderT -= dt;
           if (t.wanderT <= 0) {
             t.wanderT = 3 + Math.random() * 5;
@@ -174,26 +209,34 @@ export class Toddlers {
         } else t.speed = 0;
       } else t.speed = 0;
 
-      // Crying is a noise event, which is the real cost of leaving them hungry.
-      if (!t.calm && t.hunger > 65) {
+      // A hurt one whimpers now and then -- and crying is a noise event,
+      // which is the real cost of leaving them hurt.
+      if (hurt && !t.calm) {
         t.cryT -= dt;
         if (t.cryT <= 0) {
-          t.cryT = t.state === 'safe' ? 9 : 6;
-          game.emitNoise(t.x, t.z, t.state === 'safe' ? 0.5 : 0.9, 'toddler');
-          game.fx('cry', t.x, t.z, { name: t.name });
+          t.cryT = 12 + Math.random() * 8;
+          game.emitNoise(t.x, t.z, 0.6, 'toddler');
+          game.fx('cry', t.x, t.z, { name: t.name, hurt: true });
         }
       }
 
       t.model.position.set(t.x, 0, t.z);
       t.model.rotation.y = t.yaw + Math.PI;
       animateWalk(t.model, t.animT, t.speed, { amp: 0.9 });
+      this.bob(t);
     }
+  }
+
+  // The cross over a hurt toddler's head bobs so it catches the eye.
+  bob(t) {
+    const h = t.model.userData.parts.hurt;
+    if (h && h.visible) { h.position.y = 1.0 + Math.sin(t.animT * 3) * 0.05; h.rotation.y = t.animT * 1.5; }
   }
 
   serialize() {
     return this.list.map(t => ({
       i: t.id, x: +t.x.toFixed(2), z: +t.z.toFixed(2), y: +t.yaw.toFixed(2),
-      s: t.state, h: Math.round(t.hunger), c: t.calm ? 1 : 0, n: t.name
+      s: t.state, j: t.injured ? (t.bandaged ? 2 : 1) : 0, c: t.calm ? 1 : 0, n: t.name
     }));
   }
 
@@ -208,8 +251,10 @@ export class Toddlers {
         this.nextId = Math.max(this.nextId, r.i + 1);
       }
       t.x = r.x; t.z = r.z; t.yaw = r.y;
-      t.state = r.s; t.hunger = r.h; t.calm = !!r.c; t.name = r.n;
+      t.state = r.s; t.calm = !!r.c; t.name = r.n;
+      t.injured = r.j > 0; t.bandaged = r.j === 2;
       t.model.visible = r.s !== 'carried' && r.s !== 'taken';
+      this.dress(t);
     }
     for (const t of this.list.slice()) {
       if (!seen.has(t.id)) {

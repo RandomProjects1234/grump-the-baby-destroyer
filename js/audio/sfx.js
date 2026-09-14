@@ -1,6 +1,6 @@
 // Every sound is synthesised at runtime with the Web Audio API. Nothing to
 // download, which keeps the whole game a static folder.
-import { clamp } from '../util/util.js?v=2026-09-13d';
+import { clamp } from '../util/util.js?v=2026-09-13e';
 
 export class Sfx {
   constructor() {

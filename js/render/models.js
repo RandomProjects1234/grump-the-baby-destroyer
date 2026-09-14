@@ -324,6 +324,23 @@ export function makeToddler(seedIdx = 0) {
   const dummy = part(sphere(0.035, 6), mat(0xe58ca8), 0, 0.62, -0.19);
   g.add(dummy);
   g.userData.parts.dummy = dummy;
+  // Hurt: a red cross floating over their head, and a red scrape on the knee.
+  const hurt = new THREE.Group();
+  hurt.add(part(box(0.16, 0.05, 0.02), emissive(0xe23a30), 0, 0, 0));
+  hurt.add(part(box(0.05, 0.16, 0.02), emissive(0xe23a30), 0, 0, 0));
+  hurt.position.set(0, 1.0, 0);
+  hurt.visible = false;
+  g.add(hurt);
+  const scrape = part(box(0.07, 0.05, 0.02), mat(0xc0392b), 0.085, 0.14, -0.06);
+  scrape.visible = false;
+  g.add(scrape);
+  // Bandaged: a plaster on the knee and a band round the head.
+  const bandage = new THREE.Group();
+  bandage.add(part(box(0.1, 0.06, 0.025), mat(0xe8c49a), 0.085, 0.14, -0.06));
+  bandage.add(part(cyl(0.2, 0.2, 0.05, 10), mat(0xf4f4f0), 0, 0.62, 0));
+  bandage.visible = false;
+  g.add(bandage);
+  Object.assign(g.userData.parts, { hurt, scrape, bandage });
   return g;
 }
 

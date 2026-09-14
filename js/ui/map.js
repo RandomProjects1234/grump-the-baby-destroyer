@@ -6,7 +6,7 @@
 //
 // Bob never appears on the map. Grump only does in daylight, before day 4,
 // while he is still pretending to be your friend.
-import { ITEMS } from '../game/items.js?v=2026-09-13d';
+import { ITEMS } from '../game/items.js?v=2026-09-13e';
 
 const B = 16;                    // base image pixels per grid cell
 
@@ -218,9 +218,10 @@ export class MapView {
       for (const t of game.toddlers.list) {
         if (t.state === 'taken' || t.state === 'carried') continue;
         const x = this.px(t.x), z = this.pz(t.z);
-        g.fillStyle = t.state === 'safe' ? '#7ad07a' : '#f09040';
+        const hurt = t.injured && !t.bandaged;
+        g.fillStyle = t.state === 'safe' ? '#7ad07a' : hurt ? '#ff4a40' : '#f09040';
         this.dot(g, x, z, 3.6 * inv);
-        if (labels && t.state !== 'safe') this.label(g, t.name, x, z - 10 * inv, inv, '#f09040');
+        if (labels && t.state !== 'safe') this.label(g, hurt ? t.name + ' (hurt)' : t.name, x, z - 10 * inv, inv, hurt ? '#ff4a40' : '#f09040');
       }
     }
 

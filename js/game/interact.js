@@ -11,8 +11,8 @@
 // down at the floor and small things at your feet count too. Only when the
 // line hits nothing at all do we fall back to the closest thing roughly in
 // front of you.
-import { ITEMS, SEARCH_TIME, isBig, isFood, itemName } from './items.js?v=2026-09-13d';
-import { dist2 } from '../util/util.js?v=2026-09-13d';
+import { ITEMS, SEARCH_TIME, isBig, isFood, itemName } from './items.js?v=2026-09-13e';
+import { dist2 } from '../util/util.js?v=2026-09-13e';
 
 const REACH = 2.5;
 const FALLBACK_CONE = 0.45;   // radians either side, only when nothing is hit
@@ -130,10 +130,17 @@ export function findInteraction(game) {
     if (t.putDownAt && game.time - t.putDownAt < 1.5) continue;
     if (dist2(ox, oz, t.x, t.z) > REACH + 1) continue;
     add({ circle: [t.x, t.z, 0.36] }, () => {
+      const hurt = t.injured && !t.bandaged;
+      const inNurse = here && here.type === 'nurse' && game.school.roomAt(t.x, t.z) === here;
+      if (hurt && inNurse) {
+        return { label: `Put a plaster on ${t.name}`, hint: 'Clean the scrape, then stick the plaster on.', hold: 0, act: () => game.bandageToddler(t) };
+      }
       if (p.hands === 'teddy') return { label: `Give the teddy to ${t.name}`, hold: 0.8, act: () => game.teddyToddler(t) };
-      const food = p.bag.find(k => isFood(k));
-      if (t.hunger > 40 && food) return { label: `Feed ${t.name} your ${itemName(food).toLowerCase()}`, hint: 'Hungry toddlers cry, and crying carries.', hold: 0.7, act: () => game.feedToddler(t, food) };
-      if (p.handsFree) return { label: `Pick up ${t.name}`, hint: t.hunger > 65 ? 'Hungry.' : 'Carry them to your classroom.', hold: 0.45, act: () => game.carryToddler(t) };
+      if (p.handsFree) {
+        return hurt
+          ? { label: `Pick up ${t.name} (hurt)`, hint: "Take them to the nurse's office (the red cross on the map) for a plaster.", hold: 0.45, act: () => game.carryToddler(t) }
+          : { label: `Pick up ${t.name}`, hint: 'Carry them to your classroom.', hold: 0.45, act: () => game.carryToddler(t) };
+      }
       return { label: `${t.name} (hands full)`, hint: 'Put down what you are holding first (Q).', hold: 0, act: () => game.sfx.deny() };
     }, { floor: true, key: 'tod' + t.id, weight: t.state === 'safe' ? 0 : 0.3 });
   }
@@ -370,7 +377,16 @@ export function findInteraction(game) {
   // else) puts them down
   if (carrying) {
     const inHome = here === game.school.home;
-    const putDown = {
+    const held = game.toddlers.byId(p.hands.toddler);
+    const hurt = held && held.injured && !held.bandaged;
+    const inNurse = here && here.type === 'nurse';
+    const putDown = hurt && inNurse ? {
+      label: `Sit ${held.name} on the nurse's bed`, hint: 'Then put a plaster on them.', hold: 0.3,
+      act: () => { game.putDownToddler(); game.bandageToddler(held); }
+    } : hurt ? {
+      label: 'Put them down', hint: "They are hurt: carry them to the nurse's office (red cross on the map).", hold: 0.3,
+      act: () => game.putDownToddler()
+    } : {
       label: inHome ? 'Put them down (safe)' : 'Put them down',
       hint: inHome ? '' : 'They are only safe in your classroom.',
       hold: 0.3,

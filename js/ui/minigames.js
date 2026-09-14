@@ -8,7 +8,7 @@
 // While one is up you cannot move. Alone, the school waits for you; in co-op
 // it does not, but nothing will hunt you while you are busy with a teacher.
 // Every game is beatable in well under a minute by someone who is good at it.
-import { clamp, lerp } from '../util/util.js?v=2026-09-13d';
+import { clamp, lerp } from '../util/util.js?v=2026-09-13e';
 
 const W = 560, H = 380;
 
@@ -33,7 +33,7 @@ export class Minigames {
   // kind: 'dumbbells' | 'laps' | 'rope' | 'lunch'. onDone(result) gets
   // { win, score } (score 0..1 for the rhythm game).
   open(kind, onDone) {
-    const makers = { dumbbells: Dumbbells, laps: Laps, rope: Rope, lunch: Lunch };
+    const makers = { dumbbells: Dumbbells, laps: Laps, rope: Rope, lunch: Lunch, bandage: Bandage };
     const M = makers[kind];
     if (!M || this.cur) return false;
     this.cur = new M(this.game);
@@ -573,5 +573,146 @@ class Lunch {
       const s = this.result ? this.result.score : 0;
       banner(g, s >= 0.9 ? 'GOLD TRAY!' : s >= 0.6 ? 'NICE TRAY' : 'SOGGY TRAY', s >= 0.6 ? 'Meredith piles it on.' : 'Meredith gives you something anyway.', s >= 0.6);
     }
+  }
+}
+
+// ---------------------------------------------------------------- bandage
+
+// The nurse's office. A toddler with a scraped knee sits on the bed and
+// wriggles. First wipe the scrape clean (A and D, back and forth), then stick
+// the plaster on: it slides across -- press Space or click when it is over
+// the scrape. Two plasters to finish. Twenty-five seconds is plenty.
+class Bandage {
+  constructor(game) {
+    this.game = game;
+    this.title = "THE NURSE'S OFFICE";
+    this.help = '<b>1.</b> Wipe the scrape: tap <b>A</b> and <b>D</b> back and forth. <b>2.</b> Stick the plaster on: press <b>Space</b> or <b>click</b> when it is over the scrape. Two plasters.';
+    this.limit = 30;
+    this.time = 0;
+    this.result = null;
+    this.stage = 'wipe';
+    this.wipes = 0;
+    this.needWipes = 8;
+    this.lastWipe = null;
+    this.dirt = 1;
+    this.stuck = 0;
+    this.needStuck = 2;
+    this.plasterX = 0;
+    this.plasterDir = 1;
+    this.plasterSpeed = 250;
+    this.woundX = 280;
+    this.flash = 0;
+    this.flashGood = false;
+    this.wiggle = 0;
+    this.placed = [];
+  }
+  press(k) {
+    if (this.stage === 'wipe') {
+      if (k !== 'a' && k !== 'd' && k !== 'arrowleft' && k !== 'arrowright') return;
+      const side = (k === 'a' || k === 'arrowleft') ? 'l' : 'r';
+      if (side === this.lastWipe) return;              // it has to go back and forth
+      this.lastWipe = side;
+      this.wipes++;
+      this.dirt = Math.max(0, 1 - this.wipes / this.needWipes);
+      this.game.sfx.noise(0.08, 0.06, 1800, 1.2);
+      if (this.wipes >= this.needWipes) {
+        this.stage = 'stick';
+        this.plasterX = 60;
+        this.game.sfx.ding();
+      }
+      return;
+    }
+    if (this.stage === 'stick') {
+      if (k !== ' ' && k !== 'click' && k !== 'e') return;
+      const off = Math.abs(this.plasterX - (this.woundX + this.wiggle));
+      if (off < 38) {
+        this.stuck++;
+        this.placed.push(this.plasterX - this.wiggle - this.woundX);
+        this.flash = 0.35; this.flashGood = true;
+        this.game.sfx.tone(700 + this.stuck * 120, 0.12, 'triangle', 0.12, 120);
+        if (this.stuck >= this.needStuck) { this.result = { win: true, score: 1 }; return; }
+        this.plasterSpeed += 70;
+        this.plasterX = this.plasterDir > 0 ? 60 : 500;
+      } else {
+        this.flash = 0.35; this.flashGood = false;
+        this.game.sfx.tone(180, 0.15, 'square', 0.08, -60);
+        this.game.sfx.babyCry();
+      }
+    }
+  }
+  partial() { return this.stage === 'wipe' ? this.wipes / this.needWipes * 0.4 : 0.4 + this.stuck / this.needStuck * 0.6; }
+  update(dt) {
+    this.flash = Math.max(0, this.flash - dt);
+    // the little one wriggles
+    this.wiggle = Math.sin(this.time * 2.3) * 18 + Math.sin(this.time * 5.1) * 6;
+    if (this.stage === 'stick') {
+      this.plasterX += this.plasterDir * this.plasterSpeed * dt;
+      if (this.plasterX > 500) { this.plasterX = 500; this.plasterDir = -1; }
+      if (this.plasterX < 60) { this.plasterX = 60; this.plasterDir = 1; }
+    }
+  }
+  draw(g, dt, ended) {
+    // the nurse's office: mint walls, a bed
+    g.fillStyle = '#cfe6dd'; g.fillRect(0, 0, W, H);
+    g.fillStyle = '#e9f2ee'; g.fillRect(0, 250, W, H - 250);
+    g.fillStyle = '#d84a4a'; g.fillRect(470, 30, 60, 18); g.fillRect(491, 9, 18, 60);   // red cross on the wall
+    g.fillStyle = '#f7f7f4'; g.fillRect(70, 200, 420, 70);                               // bed
+    g.fillStyle = '#9aa6a0'; g.fillRect(70, 270, 12, 60); g.fillRect(478, 270, 12, 60);
+
+    // a big chubby leg across the bed, knee in the middle
+    const kx = this.woundX + this.wiggle, ky = 196;
+    const skin = '#f0c49a';
+    g.fillStyle = skin;
+    g.beginPath(); g.ellipse(kx - 120, ky + 8, 150, 44, 0, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.ellipse(kx + 110, ky + 14, 130, 40, 0.05, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.arc(kx, ky, 52, 0, Math.PI * 2); g.fill();
+    // the scrape
+    g.fillStyle = `rgba(200, 50, 40, ${0.55 + this.dirt * 0.35})`;
+    g.beginPath(); g.ellipse(kx, ky - 4, 30, 18, 0.2, 0, Math.PI * 2); g.fill();
+    if (this.dirt > 0) {
+      g.fillStyle = `rgba(110, 80, 50, ${this.dirt * 0.8})`;
+      for (let i = 0; i < 9; i++) { g.beginPath(); g.arc(kx - 20 + (i * 37 % 40), ky - 14 + (i * 23 % 22), 3.5, 0, Math.PI * 2); g.fill(); }
+    }
+    // plasters already on
+    for (const off of this.placed) {
+      g.save(); g.translate(kx + off, ky - 4); g.rotate(-0.2);
+      g.fillStyle = '#e8c49a'; g.fillRect(-42, -12, 84, 24);
+      g.fillStyle = '#f7e6cc'; g.fillRect(-12, -9, 24, 18);
+      g.restore();
+    }
+
+    if (this.stage === 'wipe') {
+      // a wipe going back and forth
+      const wx = kx + (this.lastWipe === 'l' ? -24 : 24);
+      g.fillStyle = '#ffffff'; g.fillRect(wx - 22, ky - 46, 44, 30);
+      g.fillStyle = '#9ad0f0'; g.fillRect(wx - 22, ky - 20, 44, 4);
+      g.fillStyle = '#2a2016'; g.font = 'bold 20px "Trebuchet MS", sans-serif'; g.textAlign = 'center';
+      g.fillText(`WIPE IT CLEAN   ${this.wipes}/${this.needWipes}`, W / 2, 40);
+      g.font = 'bold 26px "Trebuchet MS", sans-serif';
+      g.fillStyle = this.lastWipe === 'd' || !this.lastWipe ? '#e5a83a' : '#8a8f86'; g.fillText('A', W / 2 - 40, 80);
+      g.fillStyle = this.lastWipe === 'l' ? '#e5a83a' : '#8a8f86'; g.fillText('D', W / 2 + 40, 80);
+    } else {
+      // the plaster sliding above the knee
+      g.save(); g.translate(this.plasterX, 110);
+      g.fillStyle = '#e8c49a'; g.fillRect(-42, -12, 84, 24);
+      g.fillStyle = '#f7e6cc'; g.fillRect(-12, -9, 24, 18);
+      g.restore();
+      g.strokeStyle = 'rgba(0,0,0,.25)'; g.setLineDash([6, 6]); g.lineWidth = 2;
+      g.beginPath(); g.moveTo(this.plasterX, 126); g.lineTo(this.plasterX, ky - 26); g.stroke(); g.setLineDash([]);
+      g.fillStyle = '#2a2016'; g.font = 'bold 20px "Trebuchet MS", sans-serif'; g.textAlign = 'center';
+      g.fillText(`STICK IT ON   ${this.stuck}/${this.needStuck}`, W / 2, 40);
+    }
+    if (this.flash > 0) {
+      g.fillStyle = this.flashGood ? 'rgba(120, 200, 110, .25)' : 'rgba(220, 70, 60, .25)';
+      g.fillRect(0, 0, W, H);
+    }
+    // the toddler's face at the end of the bed, not impressed
+    g.fillStyle = '#f0c49a'; g.beginPath(); g.arc(40 + this.wiggle * 0.2, 170, 34, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#1a1a1a'; g.fillRect(28 + this.wiggle * 0.2, 162, 5, 5); g.fillRect(48 + this.wiggle * 0.2, 162, 5, 5);
+    g.strokeStyle = '#8a4a3a'; g.lineWidth = 3; g.beginPath();
+    if (this.result && this.result.win) g.arc(40 + this.wiggle * 0.2, 176, 10, 0.2, Math.PI - 0.2);
+    else g.arc(40 + this.wiggle * 0.2, 188, 10, Math.PI + 0.3, -0.3);
+    g.stroke();
+    if (ended) banner(g, this.result && this.result.win ? 'ALL BETTER!' : 'THEY WRIGGLED FREE', this.result && this.result.win ? 'A plaster and a brave face.' : 'Try again -- the little one is still hurt.', this.result && this.result.win);
   }
 }

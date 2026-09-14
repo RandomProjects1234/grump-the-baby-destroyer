@@ -8,8 +8,8 @@
 // The host owns progress. It sends the list itself as a compact spec (template
 // id + parameters), so every player sees the same jobs even when the list
 // depends on something only the host knows, like whether Grump has turned.
-import { makeRng, hashStr } from '../util/util.js?v=2026-09-13d';
-import { itemName } from './items.js?v=2026-09-13d';
+import { makeRng, hashStr } from '../util/util.js?v=2026-09-13e';
+import { itemName } from './items.js?v=2026-09-13e';
 
 const ROOM_LABEL = {
   library: 'the library', art: 'the art room', music: 'the music room', gym: 'the gym',
@@ -57,10 +57,10 @@ const TEMPLATES = {
     desc: s => `Eat ${s.g} thing${s.g > 1 ? 's' : ''}. Big babies need big lunches.`,
     event: 'eat', goal: n => n <= 1 ? 1 : 2, tier: 'basic'
   },
-  feed: {
-    title: () => 'Snack time for the little ones',
-    desc: s => `Feed ${s.g} hungry toddler${s.g > 1 ? 's' : ''}.`,
-    event: 'fed', goal: () => 1, tier: 'good'
+  bandage: {
+    title: () => 'Patch someone up',
+    desc: () => "A little one is hurt. Carry them to the nurse's office and put a plaster on.",
+    event: 'bandaged', goal: () => 1, tier: 'good'
   },
   rescue: {
     title: () => 'Round them up',
@@ -142,7 +142,7 @@ export class Quests {
       // Day one teaches the loop.
       picks = ['genStart', 'eat', 'rescue'];
     } else {
-      const pool = ['fuel', 'repair', 'clean', 'eat', 'lunch', 'feed', 'rescue', 'searchRoom', 'lights',
+      const pool = ['fuel', 'repair', 'clean', 'eat', 'lunch', 'bandage', 'bandage', 'rescue', 'searchRoom', 'lights',
         'visit', 'hide', 'drawing', 'hamster', 'holocard'];
       if (!g.grump.turned) pool.push('crayon', 'crayon');
       // The big three (fuel, food, children) come up more than the flavour jobs.
@@ -167,6 +167,8 @@ export class Quests {
   specFor(t, night, rng) {
     const tpl = TEMPLATES[t];
     if (t === 'lunch' && !this.game.school.rooms.some(r => r.type === 'cafeteria' || r.type === 'kitchen')) return null;
+    // only when somebody is actually hurt today, and there is a nurse's office
+    if (t === 'bandage' && (!this.game.school.rooms.some(r => r.type === 'nurse') || !this.game.toddlers.hurt.length)) return null;
     let place = null;
     if (PLACES[t]) {
       let places = PLACES[t].filter(type => this.game.school.rooms.some(r => r.type === type));
@@ -178,7 +180,7 @@ export class Quests {
       place = rng.pick(places);
     }
     let goal = tpl.goal(night);
-    if (t === 'feed' || t === 'rescue') goal = Math.min(goal, 2);
+    if (t === 'rescue') goal = Math.min(goal, 2);
     return { t, p: place, g: goal };
   }
 

@@ -4,9 +4,9 @@
 // or switch state (door leaves, light panels, hideable locker doors) stay as
 // their own objects.
 import * as THREE from 'three';
-import { MeshBuilder } from '../render/meshbuilder.js?v=2026-09-13d';
-import { TEX, tiled } from '../render/textures.js?v=2026-09-13d';
-import { CELL, WALL_T, T } from './schoolgen.js?v=2026-09-13d';
+import { MeshBuilder } from '../render/meshbuilder.js?v=2026-09-13e';
+import { TEX, tiled } from '../render/textures.js?v=2026-09-13e';
+import { CELL, WALL_T, T } from './schoolgen.js?v=2026-09-13e';
 
 const DOOR_H = 2.08;
 const OPEN_W = { door: 1.15, double: 2.0 };

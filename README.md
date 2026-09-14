@@ -49,7 +49,7 @@ reward in the crib in your classroom.
 | Kind of job | Example |
 | --- | --- |
 | Keep the power on | Pour 2 cans of fuel, fit a spare part |
-| Look after the little ones | Carry 2 toddlers home, feed a hungry one |
+| Look after the little ones | Carry 2 toddlers home, patch up a hurt one at the nurse's office |
 | Chores | Clean up 3 messes, search 3 things in the library |
 | Explore | Check on the playground, switch the gym lights on |
 | Lost things | Find Mr. Wiggles the class hamster, return a shiny card to Lost & Found |
@@ -157,7 +157,7 @@ else uses **Join Co-op**.
 The host runs the simulation — the phase clock, the generator, Bob, Grump, the
 toddlers, loot, quests — and mirrors it to the others. Clients own only their
 own movement. **Everything else a joiner does is sent to the host and applied
-there**: fuel, repairs, cleaning, feeding, dropped items, answers to Grump.
+there**: fuel, repairs, cleaning, plasters, dropped items, answers to Grump.
 Nothing a joiner does exists only on their own screen.
 
 - The school never pauses in co-op. Opening a menu does not stop anyone else.
