@@ -11,8 +11,8 @@
 // down at the floor and small things at your feet count too. Only when the
 // line hits nothing at all do we fall back to the closest thing roughly in
 // front of you.
-import { ITEMS, SEARCH_TIME, isBig, isFood, itemName } from './items.js?v=2026-09-13e';
-import { dist2 } from '../util/util.js?v=2026-09-13e';
+import { ITEMS, SEARCH_TIME, isBig, isFood, itemName } from './items.js?v=2026-09-13f';
+import { dist2 } from '../util/util.js?v=2026-09-13f';
 
 const REACH = 2.5;
 const FALLBACK_CONE = 0.45;   // radians either side, only when nothing is hit

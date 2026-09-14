@@ -1,6 +1,6 @@
 // All DOM handling. The game never touches elements directly.
-import { ITEMS, itemName } from '../game/items.js?v=2026-09-13e';
-import { fmtTime, clamp } from '../util/util.js?v=2026-09-13e';
+import { ITEMS, itemName } from '../game/items.js?v=2026-09-13f';
+import { fmtTime, clamp } from '../util/util.js?v=2026-09-13f';
 
 const $ = s => document.querySelector(s);
 const SCREENS = ['menu', 'soloscreen', 'hostscreen', 'joinscreen', 'settings', 'howto'];
@@ -106,6 +106,27 @@ export class UI {
     this.el.hud.classList.toggle('cinematic', !!on);
   }
 
+  // The hunger badge under the bars and the food bar's alarm state.
+  hunger(level, how) {
+    const b = document.getElementById('hungerbadge');
+    const bar = document.getElementById('bar-food');
+    if (bar) {
+      bar.classList.toggle('low', level >= 2);
+      bar.classList.toggle('critical', level >= 3);
+    }
+    document.getElementById('vignette').classList.toggle('starving', level >= 4);
+    if (!b) return;
+    if (level < 2) { b.classList.add('hidden'); return; }
+    const text = level >= 4 ? 'STARVING: LOSING HEALTH' : level === 3 ? 'STARVING' : 'HUNGRY';
+    const key = level + '|' + how;
+    if (b.dataset.key !== key) {
+      b.dataset.key = key;
+      b.innerHTML = `<b>${text}</b><span>${how}</span>`;
+    }
+    b.classList.remove('hidden');
+    b.classList.toggle('critical', level >= 3);
+  }
+
   flash(kind) {
     const e = this.el.flash;
     e.className = '';
@@ -173,6 +194,7 @@ export class UI {
     this.el.health.style.width = p.health + '%';
     this.el.stam.style.width = p.stamina + '%';
     this.el.food.style.width = p.food + '%';
+    if (p.dead) this.hunger(0, '');
     this.el.fear.style.width = p.fear + '%';
 
     const night = game.phase === 'night';

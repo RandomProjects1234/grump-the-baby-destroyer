@@ -1,7 +1,7 @@
 // The local baby: movement, stats, carrying, hiding.
 import * as THREE from 'three';
-import { clamp, lerp } from '../util/util.js?v=2026-09-13e';
-import { isBig, ITEMS } from './items.js?v=2026-09-13e';
+import { clamp, lerp } from '../util/util.js?v=2026-09-13f';
+import { isBig, ITEMS } from './items.js?v=2026-09-13f';
 
 export const BAG_SLOTS = 6;
 
@@ -255,11 +255,7 @@ export class Player {
       this.health = clamp(this.health - dt * 1.6, 0, 100);
       if (this.health <= 0 && !this.downed) this.goDown(game, 'hunger');
     }
-    if (this.food < 25 && !this._hungryWarned) {
-      this._hungryWarned = true;
-      game.ui.toast('Your tummy hurts. Find something to eat.');
-    }
-    if (this.food > 40) this._hungryWarned = false;
+    this.hungerWarnings(dt, game);
 
     // --- torch
     if (this.torchOn) {
@@ -319,6 +315,40 @@ export class Player {
     camera.rotation.y = this.yaw;
     camera.rotation.x = this.pitch;
     camera.rotation.z = shake * 0.05 * Math.sin(performance.now() * 0.03);
+  }
+
+  // Hunger gets louder the longer you ignore it: a reminder, then a growling
+  // stomach and a warning that stays on screen, then a big STARVING, then
+  // repeated alarms while it eats your health.
+  hungerWarnings(dt, game) {
+    const f = this.food;
+    const level = f <= 0 ? 4 : f < 10 ? 3 : f < 25 ? 2 : f < 50 ? 1 : 0;
+    if (this.hungerLevel === undefined) this.hungerLevel = level;
+    const where = game.meredith && game.meredith.room && !game.meredith.servedToday && game.phase === 'day'
+      ? 'Meredith in the cafeteria will give you lunch.'
+      : 'Search lockers, desks and the kitchen, or find a lunchbox.';
+    const hasFood = this.bag.some(k => k && ITEMS[k] && ITEMS[k].food);
+    const how = hasFood ? 'You have food: pick it with 1-6 and press R to eat.' : where;
+    if (level > this.hungerLevel) {
+      if (level === 1) game.ui.toast('You are getting hungry. ' + how);
+      if (level === 2) { game.ui.toast('HUNGRY! Your tummy hurts. ' + how); game.sfx.growl(); game.ui.flash('hunger'); }
+      if (level === 3) { game.ui.bigLine('YOU ARE STARVING'); game.sfx.growl(); game.ui.flash('hunger'); game.ui.toast('Eat something NOW. ' + how); }
+      if (level === 4) { game.ui.bigLine('STARVING\nYOU ARE LOSING HEALTH'); game.sfx.growl(); game.ui.flash('hurt'); }
+      this.growlT = 0;
+    }
+    this.hungerLevel = level;
+    // keep nagging while it is bad
+    if (level >= 2) {
+      this.growlT = (this.growlT || 0) + dt;
+      const every = level === 4 ? 6 : level === 3 ? 12 : 22;
+      if (this.growlT > every) {
+        this.growlT = 0;
+        game.sfx.growl();
+        game.ui.flash(level === 4 ? 'hurt' : 'hunger');
+        game.ui.toast((level === 4 ? 'You are starving and losing health! ' : level === 3 ? 'You are starving! ' : 'Still hungry. ') + how);
+      }
+    }
+    game.ui.hunger(level, how);
   }
 
   forward(out = new THREE.Vector3()) {

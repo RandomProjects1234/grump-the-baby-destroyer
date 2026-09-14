@@ -1,6 +1,6 @@
 // Every sound is synthesised at runtime with the Web Audio API. Nothing to
 // download, which keeps the whole game a static folder.
-import { clamp } from '../util/util.js?v=2026-09-13e';
+import { clamp } from '../util/util.js?v=2026-09-13f';
 
 export class Sfx {
   constructor() {
@@ -129,6 +129,14 @@ export class Sfx {
     this.tone(500, 0.18, 'sawtooth', 0.2, -320);
     this.tone(340, 0.26, 'square', 0.12, -220, 0.05);
   }
+  // a long low rumble with a gurgle on the end
+  growl() {
+    this.tone(70, 0.9, 'sawtooth', 0.12, 25);
+    this.tone(95, 0.7, 'sine', 0.1, -30, 0.25);
+    this.noise(0.9, 0.08, 180, 0.6, 'lowpass', 0.05);
+    this.tone(160, 0.18, 'sine', 0.06, 90, 0.85);
+  }
+
   babyCry() {
     this.tone(620, 0.42, 'sawtooth', 0.15, -260);
     this.tone(720, 0.5, 'sawtooth', 0.13, -380, 0.3);

@@ -1,7 +1,7 @@
 // Every surface texture is painted into a canvas at load time. The school has
 // to look like a school without shipping a single image file.
 import * as THREE from 'three';
-import { makeRng } from '../util/util.js?v=2026-09-13e';
+import { makeRng } from '../util/util.js?v=2026-09-13f';
 
 const SIZE = 128;
 

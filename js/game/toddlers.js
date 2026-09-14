@@ -4,8 +4,8 @@
 // About one in four is hurt. A hurt toddler sits still and whimpers (which
 // makes noise), shows a red cross, and cannot be kept safe in your classroom
 // until somebody carries them to the nurse's office and puts a plaster on.
-import { makeToddler, animateWalk } from '../render/models.js?v=2026-09-13e';
-import { clamp, dist2, makeRng } from '../util/util.js?v=2026-09-13e';
+import { makeToddler, animateWalk } from '../render/models.js?v=2026-09-13f';
+import { clamp, dist2, makeRng } from '../util/util.js?v=2026-09-13f';
 
 const NAMES = ['Pip', 'Moo', 'Bibi', 'Tog', 'Nell', 'Dot', 'Wex', 'Bun', 'Cricket', 'Snib'];
 

@@ -11,9 +11,9 @@
 // Like the card boy it is local -- every player gets their own -- so the
 // Grump in it is a stand-in and the real one is hidden from you while it
 // plays. When it ends the real Grump is a little fonder of you.
-import { makeBigKid, makeGrump, setGrumpStage, animateWalk } from '../render/models.js?v=2026-09-13e';
-import { clamp, lerp, approachAngle, makeRng, hashStr } from '../util/util.js?v=2026-09-13e';
-import { GRUMP_TURNS_ON_DAY } from './threats.js?v=2026-09-13e';
+import { makeBigKid, makeGrump, setGrumpStage, animateWalk } from '../render/models.js?v=2026-09-13f';
+import { clamp, lerp, approachAngle, makeRng, hashStr } from '../util/util.js?v=2026-09-13f';
+import { GRUMP_TURNS_ON_DAY } from './threats.js?v=2026-09-13f';
 
 const LENGTH = 29;
 const EYE = 0.6;

@@ -8,8 +8,8 @@
 // The host owns progress. It sends the list itself as a compact spec (template
 // id + parameters), so every player sees the same jobs even when the list
 // depends on something only the host knows, like whether Grump has turned.
-import { makeRng, hashStr } from '../util/util.js?v=2026-09-13e';
-import { itemName } from './items.js?v=2026-09-13e';
+import { makeRng, hashStr } from '../util/util.js?v=2026-09-13f';
+import { itemName } from './items.js?v=2026-09-13f';
 
 const ROOM_LABEL = {
   library: 'the library', art: 'the art room', music: 'the music room', gym: 'the gym',

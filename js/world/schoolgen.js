@@ -3,7 +3,7 @@
 // Everything here is a pure function of the seed. Multiplayer never sends
 // geometry -- the host sends one number and every client rebuilds the same
 // building from it, right down to which locker holds the wrench.
-import { makeRng } from '../util/util.js?v=2026-09-13e';
+import { makeRng } from '../util/util.js?v=2026-09-13f';
 
 export const CELL = 2.4;         // metres per grid cell
 export const WALL_H = 3.0;       // standard ceiling height

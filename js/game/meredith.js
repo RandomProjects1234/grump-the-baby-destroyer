@@ -8,8 +8,8 @@
 //
 // One tray each, each day. Like Mrs. Honeywell she lives on every player's
 // own machine: her spot comes from the layout, her hours from the clock.
-import { makeMeredith, animateWalk } from '../render/models.js?v=2026-09-13e';
-import { approachAngle, dist2 } from '../util/util.js?v=2026-09-13e';
+import { makeMeredith, animateWalk } from '../render/models.js?v=2026-09-13f';
+import { approachAngle, dist2 } from '../util/util.js?v=2026-09-13f';
 
 const LINE = 'Meredith: "Here\'s your reward for being so good at your quests. Have some lunch, kid!"';
 

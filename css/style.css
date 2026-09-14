@@ -436,3 +436,23 @@ table.keys td:first-child {
 #mg-canvas { width: 100%; height: auto; display: block; border-radius: 8px; background: #000; touch-action: none; }
 #mg-help { margin-top: 8px; color: #cfc8b6; font-size: 13px; line-height: 1.4; }
 #mg-help b { color: #ffd23f; }
+
+/* hunger warnings */
+#hungerbadge {
+  position: absolute; left: 18px; bottom: 116px; max-width: 250px;
+  background: rgba(40, 18, 8, .88); border: 2px solid #e0903a; border-radius: 10px;
+  padding: 7px 11px; color: #f3e2c8; font-size: 12px; line-height: 1.35;
+  box-shadow: 0 0 18px rgba(224, 144, 58, .35); animation: hungerpulse 1.6s ease-in-out infinite;
+}
+#hungerbadge b { display: block; color: #ffb35a; letter-spacing: .12em; font-size: 13px; }
+#hungerbadge.critical { border-color: #ff4a3a; box-shadow: 0 0 26px rgba(255, 74, 58, .55); animation-duration: .8s; }
+#hungerbadge.critical b { color: #ff6a5a; }
+@keyframes hungerpulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.04); } }
+#bar-food.low span { background: linear-gradient(90deg, #a0321e, #e0703a); }
+#bar-food.low { animation: barblink 1.2s steps(2, jump-none) infinite; }
+#bar-food.critical { animation-duration: .5s; box-shadow: 0 0 10px rgba(255, 70, 50, .8); }
+@keyframes barblink { 0% { outline: 2px solid rgba(255, 90, 60, .9); } 100% { outline: 2px solid transparent; } }
+#flash.hunger { background: radial-gradient(ellipse at center, transparent 40%, rgba(220, 120, 30, .5) 100%); animation: fade 1s ease-out; }
+#vignette.starving { animation: starve 1.4s ease-in-out infinite; }
+@keyframes starve { 0%, 100% { box-shadow: inset 0 0 120px rgba(180, 20, 10, .25); } 50% { box-shadow: inset 0 0 180px rgba(200, 30, 10, .6); } }
+#hud.cinematic #hungerbadge { opacity: 0; }

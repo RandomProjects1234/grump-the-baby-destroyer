@@ -1,7 +1,7 @@
 // The generator, the mess-cleaning chores, dropped items and portable lights.
 import * as THREE from 'three';
-import { makeItem } from '../render/models.js?v=2026-09-13e';
-import { clamp, dist2, makeRng } from '../util/util.js?v=2026-09-13e';
+import { makeItem } from '../render/models.js?v=2026-09-13f';
+import { clamp, dist2, makeRng } from '../util/util.js?v=2026-09-13f';
 
 // ---------------------------------------------------------------- generator
 

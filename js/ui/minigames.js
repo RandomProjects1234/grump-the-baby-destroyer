@@ -8,7 +8,7 @@
 // While one is up you cannot move. Alone, the school waits for you; in co-op
 // it does not, but nothing will hunt you while you are busy with a teacher.
 // Every game is beatable in well under a minute by someone who is good at it.
-import { clamp, lerp } from '../util/util.js?v=2026-09-13e';
+import { clamp, lerp } from '../util/util.js?v=2026-09-13f';
 
 const W = 560, H = 380;
 

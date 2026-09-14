@@ -12,32 +12,32 @@
 //   * Anything that should be SEEN or HEARD goes through fx(), which plays it
 //     locally and on every client, attenuated by each player's own position.
 import * as THREE from 'three';
-import { Renderer } from './render/renderer.js?v=2026-09-13e';
-import { initTextures } from './render/textures.js?v=2026-09-13e';
-import { buildSchool, materialFor, resetMaterials } from './world/build.js?v=2026-09-13e';
-import { generateSchool } from './world/schoolgen.js?v=2026-09-13e';
-import { buildCollider, computeNavBlocking, repairConnectivity } from './game/collide.js?v=2026-09-13e';
-import { Nav } from './game/nav.js?v=2026-09-13e';
-import { Player } from './game/player.js?v=2026-09-13e';
-import { Bob, Grump } from './game/threats.js?v=2026-09-13e';
-import { Toddlers } from './game/toddlers.js?v=2026-09-13e';
-import { Generator, Messes, GroundItems, PortableLights } from './game/systems.js?v=2026-09-13e';
-import { findInteraction, useSelected, dropHands } from './game/interact.js?v=2026-09-13e';
-import { CardKid } from './game/cardkid.js?v=2026-09-13e';
-import { Honeywell } from './game/honeywell.js?v=2026-09-13e';
-import { Bullies } from './game/bullies.js?v=2026-09-13e';
-import { Jerry } from './game/jerry.js?v=2026-09-13e';
-import { Meredith } from './game/meredith.js?v=2026-09-13e';
-import { Minigames } from './ui/minigames.js?v=2026-09-13e';
-import { Quests } from './game/quests.js?v=2026-09-13e';
-import { rollLoot, DRAWINGS, ITEMS, itemName, isBig, lunchboxContents } from './game/items.js?v=2026-09-13e';
-import { pickQuestion } from './game/dialogue.js?v=2026-09-13e';
-import { makeBaby, makeGrump, makeBob, setGrumpStage, animateWalk, BABY_COLORS, OUTFIT_COLORS } from './render/models.js?v=2026-09-13e';
-import { Sfx } from './audio/sfx.js?v=2026-09-13e';
-import { UI } from './ui/ui.js?v=2026-09-13e';
-import { MapView } from './ui/map.js?v=2026-09-13e';
-import { Net } from './net/net.js?v=2026-09-13e';
-import { clamp, lerp, dist2, makeRng, hashStr, fmtTime } from './util/util.js?v=2026-09-13e';
+import { Renderer } from './render/renderer.js?v=2026-09-13f';
+import { initTextures } from './render/textures.js?v=2026-09-13f';
+import { buildSchool, materialFor, resetMaterials } from './world/build.js?v=2026-09-13f';
+import { generateSchool } from './world/schoolgen.js?v=2026-09-13f';
+import { buildCollider, computeNavBlocking, repairConnectivity } from './game/collide.js?v=2026-09-13f';
+import { Nav } from './game/nav.js?v=2026-09-13f';
+import { Player } from './game/player.js?v=2026-09-13f';
+import { Bob, Grump } from './game/threats.js?v=2026-09-13f';
+import { Toddlers } from './game/toddlers.js?v=2026-09-13f';
+import { Generator, Messes, GroundItems, PortableLights } from './game/systems.js?v=2026-09-13f';
+import { findInteraction, useSelected, dropHands } from './game/interact.js?v=2026-09-13f';
+import { CardKid } from './game/cardkid.js?v=2026-09-13f';
+import { Honeywell } from './game/honeywell.js?v=2026-09-13f';
+import { Bullies } from './game/bullies.js?v=2026-09-13f';
+import { Jerry } from './game/jerry.js?v=2026-09-13f';
+import { Meredith } from './game/meredith.js?v=2026-09-13f';
+import { Minigames } from './ui/minigames.js?v=2026-09-13f';
+import { Quests } from './game/quests.js?v=2026-09-13f';
+import { rollLoot, DRAWINGS, ITEMS, itemName, isBig, lunchboxContents } from './game/items.js?v=2026-09-13f';
+import { pickQuestion } from './game/dialogue.js?v=2026-09-13f';
+import { makeBaby, makeGrump, makeBob, setGrumpStage, animateWalk, BABY_COLORS, OUTFIT_COLORS } from './render/models.js?v=2026-09-13f';
+import { Sfx } from './audio/sfx.js?v=2026-09-13f';
+import { UI } from './ui/ui.js?v=2026-09-13f';
+import { MapView } from './ui/map.js?v=2026-09-13f';
+import { Net } from './net/net.js?v=2026-09-13f';
+import { clamp, lerp, dist2, makeRng, hashStr, fmtTime } from './util/util.js?v=2026-09-13f';
 
 const SET_KEY = 'grump.settings.v1';
 
@@ -75,7 +75,7 @@ const NIGHT_MODS = [
 // Bump on every release that changes the school layout or the network
 // messages. Players on different versions build different schools (door and
 // prop numbers stop matching), so co-op refuses to mix them.
-export const GAME_VERSION = '2026-09-13e';
+export const GAME_VERSION = '2026-09-13f';
 
 const CLIENT_QUEST_EVENTS = new Set(['eat', 'hide', 'drawing', 'lunch', 'gym']);
 
